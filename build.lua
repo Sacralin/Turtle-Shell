@@ -130,6 +130,24 @@ local function markersCarried()
   return count
 end
 
+-- Place the selected block below. A mob (or a dropped item) in the
+-- way stops that like a block would: hit it and try again, for a
+-- while, before giving up.
+local PLACE_TRIES = 20 -- about 10 seconds
+local function placeBelow()
+  for _ = 1, PLACE_TRIES do
+    if turtle.placeDown() then
+      return true
+    end
+    if turtle.detectDown() then
+      return false -- a block's there: hitting won't help
+    end
+    turtle.attackDown()
+    sleep(0.5)
+  end
+  return false
+end
+
 local function selectMarker()
   for slot = 1, 16 do
     local item = turtle.getItemDetail(slot)
@@ -160,7 +178,7 @@ local function markBelow(x, y, z)
   end
   local previousSlot = turtle.getSelectedSlot()
   selectMarker()
-  local placed = turtle.placeDown()
+  local placed = placeBelow()
   turtle.select(previousSlot)
   if not placed then
     return false, "couldn't place it"
@@ -433,8 +451,8 @@ local function placeCell(plan, y, cell)
     turtle.digDown() -- whatever's there: it's in the way of the plan
     sightings.gone(block, x, wy, z)
   end
-  if not selectItem(cell.name) or not turtle.placeDown() then
-    return false, "couldn't place " .. cell.name
+  if not selectItem(cell.name) or not placeBelow() then
+    return false, "couldn't place " .. cell.name .. " (something in the way at " .. x .. " " .. wy .. " " .. z .. ")"
   end
   worldmap.set(x, wy, z, "wall")
   return true
