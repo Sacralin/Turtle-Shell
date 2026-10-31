@@ -230,6 +230,10 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
         if reason == "Out of fuel" then
           return false, reason
         end
+        if block.x == goalX and block.y == goalY and block.z == goalZ
+            and tostring(reason):find("^blocked by") then
+          return false, reason -- the goal itself is taken by something built: no way round that
+        end
         why = reason -- something in the way: plan again from here
         if reason == "Movement obstructed" or tostring(reason):find("^can't dig") then
           -- a turtle (nav waited and it didn't move), or ground this
@@ -381,6 +385,14 @@ function travel.takeOnly(keep)
 end
 
 
+-- What's sitting on its home spot, if that's why it couldn't get
+-- home last time (for the tracker to show), or nil.
+local homeBlockedBy = nil
+
+function travel.homeBlocked()
+  return homeBlockedBy
+end
+
 -- Go home and face the way it was set up.
 function travel.home(shouldStop)
   local x, y, z, facing = position.home()
@@ -390,6 +402,11 @@ function travel.home(shouldStop)
   local ok, why = travel.to(x, y, z, shouldStop)
   if ok then
     turn.toFace(facing)
+    homeBlockedBy = nil
+  else
+    -- blocked by something right on the home spot (not a turtle: it'll move)?
+    local name = tostring(why):match("blocked by ([%w_:%-%.]+) at " .. x .. " " .. y .. " " .. z .. "$")
+    homeBlockedBy = (name and not name:find("^computercraft:")) and name or nil
   end
   return ok, why
 end

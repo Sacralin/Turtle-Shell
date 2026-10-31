@@ -15,6 +15,10 @@ equipment.FUEL_ITEMS = {
   ["minecraft:coal_block"] = true,
 }
 
+-- the order it burns them in: charcoal first (the Crafter makes it
+-- from wood), so the coal stays in the warehouse
+local BURN_ORDER = { "minecraft:charcoal", "minecraft:coal", "minecraft:coal_block" }
+
 equipment.PICKAXES = {
   ["minecraft:diamond_pickaxe"] = true,
 }
@@ -118,8 +122,9 @@ function equipment.hasFuel(amount)
 end
 
 -- Burn fuel items from the inventory, one at a time, until the
--- fuel reaches target. With no target, fill right up.
-function equipment.refuelFromInventory(target)
+-- fuel reaches target (with no target, fill right up): charcoal
+-- first, then coal. only: just these kinds ({ [name] = true }).
+function equipment.refuelFromInventory(target, only)
   local level, limit = equipment.fuel()
   if level == "unlimited" then
     return
@@ -128,16 +133,20 @@ function equipment.refuelFromInventory(target)
 
   local previousSlot = turtle.getSelectedSlot()
 
-  for slot = 1, 16 do
-    local item = turtle.getItemDetail(slot)
-    if item and equipment.FUEL_ITEMS[item.name] then
-      turtle.select(slot)
-      while turtle.getFuelLevel() < target and turtle.refuel(1) do
-        -- keep burning one at a time
+  for _, name in ipairs(BURN_ORDER) do
+    if not only or only[name] then
+      for slot = 1, 16 do
+        if turtle.getFuelLevel() >= target then
+          break
+        end
+        local item = turtle.getItemDetail(slot)
+        if item and item.name == name then
+          turtle.select(slot)
+          while turtle.getFuelLevel() < target and turtle.refuel(1) do
+            -- keep burning one at a time
+          end
+        end
       end
-    end
-    if turtle.getFuelLevel() >= target then
-      break
     end
   end
 

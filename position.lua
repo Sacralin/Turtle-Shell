@@ -218,6 +218,14 @@ function position.noteSurroundings()
   save()
 end
 
+-- what a spot can turn into by itself (dug out, or flowed into)
+local SETTLES = {
+  ["minecraft:air"] = true, ["minecraft:cave_air"] = true,
+  ["minecraft:water"] = true, ["minecraft:lava"] = true,
+}
+-- and what can fall into a spot that was empty
+local FALLS = { ["minecraft:gravel"] = true, ["minecraft:sand"] = true, ["minecraft:red_sand"] = true }
+
 -- Is what's around us what was there when we last looked? If
 -- not, we've probably been picked up and put down somewhere
 -- else. Returns true, or false and what's different. (Other
@@ -234,9 +242,11 @@ function position.stillHere()
   }
   for _, side in ipairs({ "down", "up", "front" }) do
     local was, is = around[side], now[side]
-    -- mid-job it may have dug out the block below itself
-    local dugBelow = side == "down" and is == "minecraft:air" and not around.front
-    if was and was ~= is and not dugBelow and not was:find("^computercraft:") and not is:find("^computercraft:") then
+    -- what digging and the world do by themselves, mid-job: a block
+    -- dug out (air), water or lava flowed in, gravel or sand fallen
+    -- in. Being picked up and put down shows up as something else.
+    local byItself = SETTLES[is] == true or (FALLS[is] and SETTLES[was]) == true
+    if was and was ~= is and not byItself and not was:find("^computercraft:") and not is:find("^computercraft:") then
       return false, ("%s me was %s, now it's %s"):format(side == "front" and "in front of" or (side == "up" and "above" or "below"), was, is)
     end
   end

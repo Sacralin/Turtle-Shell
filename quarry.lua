@@ -10,7 +10,9 @@
 --
 -- It keeps everything it digs (the colony may want it later),
 -- and when it's full it brings it all to the Crafter's in chest (where that is comes from
--- the tracker). Coal it finds keeps its tank topped up.
+-- the tracker). The coal it digs goes there too: it burns charcoal
+-- from the warehouse, and its own coal only when it's low and the
+-- warehouse has nothing for it.
 --
 -- What it's for decides when it goes. Every minute it looks at
 -- the warehouse:
@@ -389,7 +391,6 @@ function quarry.trip(atLevel)
   level = atLevel or LEVEL
   local q = getQuarry()
   local e = q.entrance
-  equipment.refuelFromInventory()
   readLimits(findWarehouse())
 
   web.setDoing(("Going to the quarry at %d %d %d"):format(e.x, e.y, e.z))
@@ -604,7 +605,11 @@ local function fuelUp(house)
     wants = nil
     return true
   end
-  equipment.refuelFromInventory(equipment.fillTarget())
+  -- charcoal before coal: the coal it digs is for the warehouse, so
+  -- it burns any charcoal it has, then fetches from the warehouse
+  -- (which gives out charcoal first), and only burns its own coal if
+  -- it's still low after that
+  equipment.refuelFromInventory(equipment.fillTarget(), { ["minecraft:charcoal"] = true })
   if not equipment.lowOnFuel() then
     wants = nil
     return true
@@ -615,9 +620,12 @@ local function fuelUp(house)
     -- whatever's in the out chest so far
     if travel.to(house.outX, house.y + 1, house.outZ) then
       travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }) -- only the fuel: the rest is someone else's
-      equipment.refuelFromInventory()
+      equipment.refuelFromInventory(equipment.fillTarget())
     end
     travel.home()
+  end
+  if equipment.lowOnFuel() then
+    equipment.refuelFromInventory(equipment.fillTarget()) -- the warehouse had none: its own coal, rather than be stuck
   end
   if not equipment.lowOnFuel() then
     wants = nil

@@ -154,6 +154,9 @@ function web.status()
       report.sightings = seen
     end
 
+    -- something sitting on its home spot, so it can't get home
+    report.homeBlocked = require("travel").homeBlocked()
+
     -- what it's learnt about the way round (worldmap.lua)
     local changes = require("worldmap").changes(1000) -- (a Scanner in a cave learns a lot at once)
     if #changes > 0 then
