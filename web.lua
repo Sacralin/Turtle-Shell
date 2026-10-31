@@ -88,6 +88,13 @@ function web.status()
     release = file.readAll()
     file.close()
   end
+  -- and the exact commit it came from (the updater's commit.txt)
+  local commit = nil
+  if fs.exists("commit.txt") then
+    local file = fs.open("commit.txt", "r")
+    commit = (file.readAll() or ""):sub(1, 7)
+    file.close()
+  end
 
   local report = {
     id = os.getComputerID(),
@@ -96,6 +103,7 @@ function web.status()
     role = require("role").get(),
     world = require("world").get(), -- nil until it's been told
     release = release,
+    commit = commit,
     doing = doing,
     time = os.epoch("utc"), -- when this was true, in milliseconds
   }
