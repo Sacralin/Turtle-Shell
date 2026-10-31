@@ -204,9 +204,51 @@ end
 -- free, what it digs would fall on the floor.
 local ROOM_NEEDED = 4
 
+-- On a trip for coal it comes back with a stack (COAL_HAUL), not a
+-- handful: a trip burns more fuel than a few coal are worth. To make
+-- room it drops the common stone and dirt it digs on the way (never
+-- deepslate, which the build needs, nor ores or anything else).
+local COAL_HAUL = 64
+local COAL_TRIP_FUEL = 40 * 80 -- fuel a coal trip may burn (40 coal's worth): in a poor spot it comes back with what it has
+local tripStartFuel = nil      -- its fuel when this coal trip set off
+local JUNK = {
+  ["minecraft:cobblestone"] = true, ["minecraft:dirt"] = true, ["minecraft:gravel"] = true,
+  ["minecraft:andesite"] = true, ["minecraft:diorite"] = true, ["minecraft:granite"] = true,
+  ["minecraft:tuff"] = true, ["minecraft:calcite"] = true, ["minecraft:sand"] = true,
+  ["minecraft:flint"] = true,
+  ["create:crimsite"] = true, ["create:asurine"] = true, ["create:ochrum"] = true, ["create:veridium"] = true,
+  ["create:limestone"] = true, ["create:scoria"] = true, ["create:scorchia"] = true,
+}
+local coalTrip = false -- on a trip for coal (quarry.work sets it)
+
+local function coalCarried()
+  local n = 0
+  for slot = 1, 16 do
+    local item = turtle.getItemDetail(slot)
+    if item and item.name == "minecraft:coal" then
+      n = n + item.count
+    end
+  end
+  return n
+end
+
+local function dropJunk()
+  for slot = 1, 16 do
+    local item = turtle.getItemDetail(slot)
+    if item and JUNK[item.name] then
+      turtle.select(slot)
+      turtle.drop()
+    end
+  end
+  turtle.select(1)
+end
+
 local function hasRoom()
   if emptySlots() < ROOM_NEEDED then
     dropOverLimit()
+  end
+  if emptySlots() < ROOM_NEEDED and coalTrip then
+    dropJunk()
   end
   return emptySlots() >= ROOM_NEEDED
 end
@@ -262,6 +304,12 @@ end
 local function reasonToStop(q)
   if orders.has("home") then
     return "told to go home"
+  end
+  if coalTrip and coalCarried() >= COAL_HAUL then
+    return "got a stack of coal"
+  end
+  if coalTrip and tripStartFuel and tripStartFuel - turtle.getFuelLevel() > COAL_TRIP_FUEL then
+    return "used this trip's fuel" -- (not much coal round here)
   end
   if not hasRoom() then
     return "full"
@@ -441,6 +489,7 @@ end
 local unreachable = {}
 local UNREACHABLE_FOR = 1800 -- seconds
 local ORE_RANGE = 64         -- blocks from home: further than that, it tunnels for it instead
+quarry.MIN_HAUL = 16         -- known coal spots free for it, at least, to go after them (else it tunnels)
 
 local function oreKey(ore)
   return ore.x .. "," .. ore.y .. "," .. ore.z
@@ -448,11 +497,12 @@ end
 
 -- Known ore near home (leaving out what it couldn't reach lately,
 -- and anything far away: a long trip for a block or two of coal
--- costs more time than tunnelling for it).
+-- costs more time than tunnelling for it; and what another turtle's
+-- already going for: the tracker gives each spot to one at a time).
 local function knownOre(match)
   local hx, hy, hz = position.home()
-  local list = web.get(("/known?world=%s&match=%s&x=%d&y=%d&z=%d&max=32"):format(
-    textutils.urlEncode(require("world").get() or ""), textutils.urlEncode(match), hx, hy, hz))
+  local list = web.get(("/known?world=%s&match=%s&x=%d&y=%d&z=%d&max=32&id=%d"):format(
+    textutils.urlEncode(require("world").get() or ""), textutils.urlEncode(match), hx, hy, hz, os.getComputerID()))
   if type(list) ~= "table" then
     return {}
   end
@@ -473,7 +523,7 @@ end
 -- the way there (it knows the map: an ore round a wall is further
 -- than it looks), if it's one near home; or else the nearest in a
 -- straight line from here. Takes it off left. Returns the ore.
-local function nextOre(left, match)
+local function nextOre(left, match, done)
   local x, y, z = position.get()
   local hx, _, hz = position.home()
   local avoid = {}
@@ -483,8 +533,19 @@ local function nextOre(left, match)
       table.insert(avoid, { tonumber(ax), tonumber(ay), tonumber(az) })
     end
   end
+  for spot in pairs(done) do -- dug this trip: the tracker may not know yet
+    local ax, ay, az = spot:match("^(-?%d+),(-?%d+),(-?%d+)$")
+    table.insert(avoid, { tonumber(ax), tonumber(ay), tonumber(az) })
+  end
+  -- with what it's learnt (the ore it's dug is open now), so the
+  -- tracker doesn't send it back to the same spot; and who it is, so
+  -- the spot it's given is kept for it (another turtle isn't sent too)
+  local changes = require("worldmap").changes(1500)
   local reply = web.post("/nearest", { world = require("world").get() or "", from = { x, y, z },
-    match = match, dig = true, avoid = avoid })
+    match = match, dig = true, avoid = avoid, map = changes, id = os.getComputerID() })
+  if type(reply) == "table" then
+    require("worldmap").shared(changes)
+  end
   local block = type(reply) == "table" and type(reply.block) == "table" and reply.block
   if block and type(block.x) == "number" and type(block.y) == "number" and type(block.z) == "number"
       and math.max(math.abs(block.x - hx), math.abs(block.z - hz)) <= ORE_RANGE then
@@ -509,11 +570,12 @@ end
 -- Dig to each known ore block in turn, nearest to where it is
 -- each time (not to home: the list is spread all over), then
 -- deliver and come home. Returns a sentence and why it stopped.
-local function huntOre(ores, label, match)
+local function huntOre(ores, label, match, holdForStack)
   local q = getQuarry()
   local reason = "got all the known " .. label
   local got, missed = 0, 0
   local left = { table.unpack(ores) }
+  local done = {} -- "x,y,z" of the ones it's been to this trip
   local tries = #ores -- (the tracker may send it to ones not on the list)
   while #left > 0 and tries > 0 do
     tries = tries - 1
@@ -522,7 +584,11 @@ local function huntOre(ores, label, match)
       reason = stop
       break
     end
-    local ore = nextOre(left, match)
+    local ore = nextOre(left, match, done)
+    if done[oreKey(ore)] then
+      break -- (nothing new to go to)
+    end
+    done[oreKey(ore)] = true
     web.setDoing(("Digging to known %s at %d %d %d (%d dug, %d left)"):format(label, ore.x, ore.y, ore.z, got, #left + 1))
     local ok, why = travel.to(ore.x, ore.y, ore.z, function() return orders.has("home") end)
     if why == "stopped" then
@@ -547,6 +613,9 @@ local function huntOre(ores, label, match)
     reason = reason .. (", %d out of reach"):format(missed)
   end
   local result = ("Dug to %d known %s blocks (%s)"):format(got, label, reason)
+  if holdForStack and reason:find("^got all the known") and coalCarried() < COAL_HAUL then
+    return result, reason, true -- not a stack yet: carries on, tunnelling for coal, before coming back
+  end
   if carrying() > 0 then
     local delivered, deliverWhy = deliver()
     result = result .. (delivered and " and delivered to the warehouse" or (", but " .. deliverWhy))
@@ -649,7 +718,7 @@ end
 -- the plan is short of deepslate. Returns a sentence, or nil.
 -- now: look straight away (a starved Builder helping out), not
 -- just once a minute.
-function quarry.work(now)
+function quarry.work(now, deepslateOnly)
   if quarry.isPaused() then
     goal = load().toldHome and "nothing: told to stay home (Go mining carries on)" or "nothing: lost (setpos)"
     return nil
@@ -674,17 +743,19 @@ function quarry.work(now)
 
   -- 1. coal first: it's everyone's fuel. 2. any other target that's
   -- short and that the Scanner has found ore for. 3. the plan.
-  local forCoal = short("minecraft:coal")
+  local forCoal = not deepslateOnly and short("minecraft:coal")
   local hunt = nil -- { item, ores }
   local order = { "minecraft:coal" }
   for item in pairs(targets) do
     if item ~= "minecraft:coal" then table.insert(order, item) end
   end
-  for _, item in ipairs(order) do
+  for _, item in ipairs(deepslateOnly and {} or order) do
     local ore = quarry.oreOf(item)
     if short(item) and ore then
       local ores = knownOre(ore)
-      if #ores > 0 then
+      -- coal: only with enough known spots free to make the trip worth it
+      -- (a coal or two is less fuel than the trip burns): else it tunnels
+      if #ores >= (item == "minecraft:coal" and quarry.MIN_HAUL or 1) then
         hunt = { item = item, ores = ores }
         break
       end
@@ -724,8 +795,16 @@ function quarry.work(now)
   end
 
   local result, reason
+  coalTrip = forCoal and (not hunt or hunt.item == "minecraft:coal")
+  tripStartFuel = coalTrip and turtle.getFuelLevel() or nil
   if hunt then
-    result, reason = huntOre(hunt.ores, label(hunt.item), quarry.oreOf(hunt.item)) -- the Scanner found some: dig straight to it
+    local more
+    result, reason, more = huntOre(hunt.ores, label(hunt.item), quarry.oreOf(hunt.item), coalTrip) -- the Scanner found some: dig straight to it
+    if more then
+      local tunnelled
+      tunnelled, reason = quarry.trip(COAL_LEVEL) -- then tunnel for the rest of a stack
+      result = result .. "; then " .. tunnelled:sub(1, 1):lower() .. tunnelled:sub(2)
+    end
     result = result .. (" (the warehouse had %d of %d)"):format(stock[hunt.item] or 0, targets[hunt.item])
   else
     result, reason = quarry.trip(tripLevel)

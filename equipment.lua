@@ -162,7 +162,10 @@ function equipment.topUp(house)
     wanted, wantedSince = nil, nil
     return true
   end
-  equipment.refuelFromInventory(equipment.fillTarget())
+  -- what it carries: charcoal; coal only if it's low (coal it's dug or
+  -- picked up is for the warehouse)
+  equipment.refuelFromInventory(equipment.fillTarget(),
+    not equipment.lowOnFuel() and { ["minecraft:charcoal"] = true } or nil)
   if not equipment.belowFill() then
     wanted, wantedSince = nil, nil
     return true

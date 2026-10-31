@@ -595,13 +595,14 @@ function buildPlan(plan, box)
         local helped = false
         if carrying(cell.name) == 0 and emptyVisits >= 2 and recipes.MINED[recipes.startOf(cell.name)] then
           -- still nothing: she has a pickaxe and a chunk loader too, so
-          -- rather than wait she joins the Miner, with the same
-          -- priorities (coal first, then targets, then the plan)
+          -- rather than wait she joins the Miner, on the deepslate the
+          -- build needs (not coal: from her home it costs more fuel to
+          -- fetch than it's worth)
           emptyVisits = 0
           web.setDoing("Nothing in the warehouse for me yet: helping the Miner")
           local quarry = require("quarry")
           goal = "helping the Miner"
-          local result = quarry.work(true)
+          local result = quarry.work(true, true)
           helped = result ~= nil and not result:find("^Waiting")
           goal = nil
         end
