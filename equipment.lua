@@ -80,7 +80,8 @@ function equipment.fuel()
   return turtle.getFuelLevel(), turtle.getFuelLimit()
 end
 
--- Fuel rules, set per job in the tracker's Warehouse tab: tanks are
+-- Fuel rules, set per job in the tracker's Warehouse tab (or per
+-- turtle, in its turtle table, which wins where it's set): tanks are
 -- kept topped up to `fillTo`%, and below `below`% a turtle drops
 -- everything to get fuel. Fetched about once a minute; these are
 -- used until then (or with no tracker). Fuel is life: a full tank is
@@ -93,7 +94,9 @@ function equipment.fuelRule()
   if not rule or os.clock() - ruleAt > 60 then
     ruleAt = os.clock()
     local job = require("role").get()
-    local got = require("web").get("/fuel?role=" .. job)
+    -- (saying which turtle it is: it may have its own values, set in the tracker's turtle table)
+    local got = require("web").get(("/fuel?role=%s&world=%s&id=%d"):format(job,
+      textutils.urlEncode(require("world").get() or ""), os.getComputerID()))
     if type(got) == "table" and type(got.below) == "number" and type(got.fillTo) == "number" then
       rule = got
     else
