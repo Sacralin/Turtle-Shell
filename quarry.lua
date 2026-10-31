@@ -430,11 +430,19 @@ function quarry.trip(atLevel)
   local e = q.entrance
   readLimits(findWarehouse())
 
+  local stop = function() return orders.has("home") end
   web.setDoing(("Going to the quarry at %d %d %d"):format(e.x, e.y, e.z))
-  local ok, why = travel.to(e.x, e.y, e.z, function() return orders.has("home") end)
+  local ok, why = travel.to(e.x, e.y, e.z, stop)
+  local viaTop = ok
   if ok then
     web.setDoing("Going down the shaft to y=" .. level)
     ok, why = nav.toY(level)
+  elseif why ~= "stopped" then
+    -- the top of the shaft can't be got to (something's been built
+    -- over it: the citadel): the tracker's way to the bottom of it,
+    -- dug down round whatever's on top
+    web.setDoing(("Going down to the bottom of the quarry's shaft, at y=%d"):format(level))
+    ok, why = travel.to(e.x, level, e.z, stop)
   end
   local reason
   if why == "stopped" then
@@ -442,6 +450,7 @@ function quarry.trip(atLevel)
   elseif not ok then
     reason = "couldn't reach the quarry: " .. tostring(why)
   end
+  local wentDown = ok
 
   while not reason do
     -- each level has its own lines (older saves: q.line was the deepslate one)
@@ -456,11 +465,17 @@ function quarry.trip(atLevel)
     end
   end
 
-  -- back up the shaft
-  local up, upWhy = toShaft(q)
-  if up then up, upWhy = nav.toY(e.y) end
-  if not up then
-    return "Stopped quarrying (" .. reason .. ") but couldn't get out: " .. tostring(upWhy)
+  -- back along the corridor to the shaft, and up it (if something's
+  -- been built over it, the way to the warehouse or home is the
+  -- tracker's, round it). Not if it never got down there.
+  if wentDown then
+    local back, backWhy = toShaft(q)
+    if not back then
+      return "Stopped quarrying (" .. reason .. ") but couldn't get out: " .. tostring(backWhy)
+    end
+    if viaTop then
+      nav.toY(e.y)
+    end
   end
 
   local result = "Quarried (" .. reason .. ")"
