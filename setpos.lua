@@ -12,6 +12,7 @@
 -- ==================================================
 
 require("position").forget()
+pcall(function() require("quarry").clearLost() end) -- a Miner stopped because it was lost can go again
 print("Forgotten where I am. Restarting to")
 print("work it out again...")
 sleep(2)

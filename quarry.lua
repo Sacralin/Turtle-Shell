@@ -89,34 +89,65 @@ local function getQuarry()
   return q
 end
 
--- Has it been paused? (The tracker's "Return home" pauses it,
--- and "Go mining" lets it carry on.) When it paused itself
--- because something went wrong, it tries again after a while,
--- in case that's cleared up (no one's around to say Go mining).
-local RETRY_AFTER = 30 * 60 * 1000 -- milliseconds
+-- A Miner mines. Only two things stop it:
+--   - "Return home" from the tracker (toldHome), until "Go mining";
+--   - losing track of where it is (lost): it'd dig and drop things
+--     in the wrong places, so it stays put until setpos or Go mining.
+-- Anything else that goes wrong (blocked, full, the warehouse out of
+-- reach) and it waits WAIT_AFTER_PROBLEM, then tries again: no one
+-- needs to come and set it going.
+local WAIT_AFTER_PROBLEM = 5 * 60 * 1000 -- milliseconds
 
+-- Stopped: told to go home, or lost?
 function quarry.isPaused()
   local q = load()
-  if q.paused and q.pausedAt and os.epoch("utc") - q.pausedAt > RETRY_AFTER then
-    quarry.setPaused(false)
-    return false
-  end
-  return q.paused == true
+  return q.toldHome == true or q.lost ~= nil
 end
 
--- why: what went wrong, when it pauses itself (nil for "Return home")
-function quarry.setPaused(on, why)
+-- "Return home" (true) / "Go mining" (false). Going again clears
+-- everything: being lost, waiting, and pauses from before (paused).
+function quarry.setPaused(on)
   local q = load()
-  q.paused = on
-  q.pausedWhy = on and why or nil
-  q.pausedAt = (on and why) and os.epoch("utc") or nil
+  q.toldHome = on or nil
+  if not on then
+    q.lost, q.waitUntil, q.waitWhy = nil, nil, nil
+  end
+  q.paused, q.pausedWhy, q.pausedAt = nil, nil, nil -- the old way: never set any more
   save(q)
 end
 
--- Why it paused itself, or nil if it didn't.
-function quarry.pausedWhy()
+-- It's been told where it is again (setpos).
+function quarry.clearLost()
   local q = load()
-  return q.paused and q.pausedAt and q.pausedWhy or nil
+  q.lost = nil
+  save(q)
+end
+
+local function setLost(why)
+  local q = load()
+  q.lost = why
+  save(q)
+end
+
+-- Something went wrong: try again in a while.
+local function waitAfter(why)
+  local q = load()
+  q.waitUntil, q.waitWhy = os.epoch("utc") + WAIT_AFTER_PROBLEM, why
+  save(q)
+end
+
+-- Why it isn't mining, for the tracker: a sentence, or nil if it's
+-- free to (and just has nothing to do).
+function quarry.stoppedWhy()
+  local q = load()
+  if q.toldHome then
+    return "Home: told to stay (Go mining carries on)"
+  elseif q.lost then
+    return "Stopped: " .. q.lost .. " (setpos, or Go mining once it's back where it should be)"
+  elseif q.waitUntil and os.epoch("utc") < q.waitUntil then
+    return "Waiting: " .. tostring(q.waitWhy) .. " (tries again in a few minutes)"
+  end
+  return nil
 end
 
 
@@ -653,7 +684,12 @@ end
 -- just once a minute.
 function quarry.work(now)
   if quarry.isPaused() then
-    goal = "nothing: paused (Go mining carries on)"
+    goal = load().toldHome and "nothing: told to stay home (Go mining carries on)" or "nothing: lost (setpos)"
+    return nil
+  end
+  local q = load()
+  if q.waitUntil and os.epoch("utc") < q.waitUntil then
+    goal = "nothing yet: trying again in a few minutes"
     return nil
   end
   if not now and lastCheck and os.clock() - lastCheck < CHECK_EVERY then
@@ -735,12 +771,15 @@ function quarry.work(now)
   else
     result = result .. (" (%d deepslate was still needed)"):format(needed)
   end
-  if reason == "told to go home" or (reason and reason:find("^couldn't")) then
-    quarry.setPaused(true, result) -- until "Go mining", or it tries again later
-    result = result .. ". Paused"
-  elseif carrying() > 0 and emptySlots() < 4 then
-    quarry.setPaused(true, result) -- couldn't deliver: no point going back full
-    result = result .. ". Paused until there's somewhere to put it"
+  if reason == "told to go home" then
+    quarry.setPaused(true) -- until Go mining
+    result = result .. ". Home until Go mining"
+  elseif result:find("lost track of where I am") then
+    setLost(result)
+    result = result .. ". Stopped"
+  elseif (reason and reason:find("^couldn't")) or (carrying() > 0 and emptySlots() < 4) then
+    waitAfter(result) -- blocked, or full with nowhere to put it: try again in a while
+    result = result .. ". Trying again in a few minutes"
   end
   return result
 end

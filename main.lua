@@ -231,10 +231,9 @@ local function idleWork()
   elseif os.clock() - lastWork > QUIET_AFTER then
     -- nothing to do for a while: say so, rather than show what it did
     -- last (so the tracker doesn't think it's stuck on that). But a
-    -- Miner that paused itself says why, so it gets looked at.
-    local why = role.get() == "Miner" and require("quarry").pausedWhy()
-    local quiet = why and ("Paused: %s (tries again by itself within 30 min, or Go mining)"):format(why)
-      or "Ready, nothing to do yet"
+    -- Miner that's stopped or waiting says why, so it gets looked at.
+    local why = role.get() == "Miner" and require("quarry").stoppedWhy()
+    local quiet = why or "Ready, nothing to do yet"
     if web.status().doing ~= quiet then
       web.setDoing(quiet)
     end
