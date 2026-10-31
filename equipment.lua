@@ -138,7 +138,10 @@ function equipment.belowFill()
   return level < fill - margin or equipment.lowOnFuel()
 end
 
--- The fuel it's asked the warehouse for, or nil.
+-- The fuel it's asked the warehouse for, or nil: { ["minecraft:coal"]
+-- = n } when it's low (it can have anything in the warehouse), or
+-- { ["topup:minecraft:coal"] = n } just to top up (only what the
+-- warehouse can spare above its reserve).
 function equipment.fuelWanted()
   return wanted
 end
@@ -161,14 +164,15 @@ function equipment.topUp(house)
     wanted, wantedSince = nil, nil
     return true
   end
-  wanted = { ["minecraft:coal"] = math.min(256, math.ceil((equipment.fillTarget() - turtle.getFuelLevel()) / 80)) }
-  wantedSince = wantedSince or os.clock()
   local low = equipment.lowOnFuel()
+  local need = math.min(256, math.ceil((equipment.fillTarget() - turtle.getFuelLevel()) / 80))
+  wanted = { [low and "minecraft:coal" or "topup:minecraft:coal"] = need }
+  wantedSince = wantedSince or os.clock()
   local due = low or (os.clock() - wantedSince >= FETCH_AFTER and (not lastFetch or os.clock() - lastFetch >= FETCH_EVERY))
   if due and type(house) == "table" and type(house.outX) == "number" and type(house.y) == "number" and type(house.outZ) == "number" then
     lastFetch = os.clock()
     local travel = require("travel")
-    require("web").setDoing(("%s: fetching %d fuel from the warehouse"):format(low and "Low on fuel" or "Topping up", wanted["minecraft:coal"]))
+    require("web").setDoing(("%s: fetching %d fuel from the warehouse"):format(low and "Low on fuel" or "Topping up", need))
     local isChest = function(name) return name == "minecraft:barrel" or name == "minecraft:chest" end
     if travel.to(house.outX, house.y + 1, house.outZ) and travel.checkAbove(isChest, house.outX, house.y, house.outZ) then
       travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }) -- only the fuel: the rest is someone else's
@@ -179,7 +183,7 @@ function equipment.topUp(house)
     end
   end
   if equipment.lowOnFuel() then
-    return false, ("low on fuel: asked the warehouse for %d"):format(wanted and wanted["minecraft:coal"] or 0)
+    return false, ("low on fuel: asked the warehouse for %d"):format(need)
   end
   return true
 end

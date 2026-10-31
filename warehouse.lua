@@ -466,6 +466,8 @@ end
 -- Must be at home. Returns true if it took any.
 local COAL_RESERVE = 1000
 local KEEP_LOGS = 32
+local KEEP_CHARCOAL = 256 -- charcoal kept back from top-ups: for the furnace, and for turtles that are low
+local TOPUP = "topup:minecraft:coal" -- a turtle's fuel, just to top up (see equipment.topUp)
 
 -- Burn what it's carrying of name, one at a time, up to the fill
 -- target (so none is wasted past it; the rest gets stored).
@@ -492,8 +494,9 @@ function warehouse.topUpFuel()
     return math.max(0, equipment.fillTarget() - turtle.getFuelLevel())
   end
 
-  -- 1. charcoal
-  local charcoal = math.min(math.ceil(short() / 80), warehouse.summary()["minecraft:charcoal"] or 0)
+  -- 1. charcoal (just topping up: only what's spare above the reserve)
+  local keepCharcoal = equipment.lowOnFuel() and 0 or KEEP_CHARCOAL
+  local charcoal = math.min(math.ceil(short() / 80), math.max(0, (warehouse.summary()["minecraft:charcoal"] or 0) - keepCharcoal))
   if charcoal > 0 and warehouse.fetch("minecraft:charcoal", charcoal) > 0 then
     burn("minecraft:charcoal")
     took = true
@@ -546,6 +549,11 @@ local function tidyOutChest(wants)
       left[name] = count
     end
   end
+  -- a top-up's fuel is coal (or charcoal) too
+  if left[TOPUP] then
+    left["minecraft:coal"] = (left["minecraft:coal"] or 0) + left[TOPUP]
+    left[TOPUP] = nil
+  end
   local tidied = 0
   for slot, stack in pairs(out.list()) do
     local key = stack.name
@@ -588,17 +596,45 @@ function warehouse.fillOrders()
   end
   local _, _, _, facing = position.home()
   local moved = 0
+  -- fuel already out there goes to turtles that are low first, then to top-ups
+  local fuelOut = (already["minecraft:coal"] or 0) + (already["minecraft:charcoal"] or 0)
+  local lowWant = type(wants["minecraft:coal"]) == "number" and wants["minecraft:coal"] or 0
+  local orders = {}
   for name, count in pairs(wants) do
-    if type(name) == "string" and type(count) == "number" then
-      local short = math.min(count - (already[name] or 0) - (name == "minecraft:coal" and already["minecraft:charcoal"] or 0), 512)
-      local got = 0
-      if name == "minecraft:coal" and short > 0 then
-        -- charcoal first (it burns just the same, and the Crafter makes
-        -- it), so the coal stays for the reserve the Miner keeps up
-        got = warehouse.fetch("minecraft:charcoal", short)
-      end
-      if short > got then
-        got = got + warehouse.fetch(name, short - got)
+    if type(name) == "string" and type(count) == "number" and name ~= TOPUP then
+      table.insert(orders, { name = name, count = count })
+    end
+  end
+  if type(wants[TOPUP]) == "number" then
+    table.insert(orders, { name = TOPUP, count = wants[TOPUP] }) -- last: what's left over
+  end
+  for _, order in ipairs(orders) do
+    local name, count = order.name, order.count
+    do
+      local short, got = 0, 0
+      if name == TOPUP then
+        -- just topping up: only what's spare above the reserve, charcoal first
+        local stock = warehouse.summary()
+        short = math.min(count - math.max(0, fuelOut - lowWant), 512)
+        local spare = math.max(0, (stock["minecraft:charcoal"] or 0) - KEEP_CHARCOAL)
+        if short > 0 and spare > 0 then
+          got = warehouse.fetch("minecraft:charcoal", math.min(short, spare))
+        end
+        spare = math.max(0, (stock["minecraft:coal"] or 0) - COAL_RESERVE)
+        if short > got and spare > 0 then
+          got = got + warehouse.fetch("minecraft:coal", math.min(short - got, spare))
+        end
+        name = "minecraft:coal" -- (what goes out is coal or charcoal)
+      else
+        short = math.min(count - (already[name] or 0) - (name == "minecraft:coal" and already["minecraft:charcoal"] or 0), 512)
+        if name == "minecraft:coal" and short > 0 then
+          -- a turtle that's low: charcoal first (it burns just the same,
+          -- and the Crafter makes it), then coal: all of it, if need be
+          got = warehouse.fetch("minecraft:charcoal", short)
+        end
+        if short > got then
+          got = got + warehouse.fetch(name, short - got)
+        end
       end
       if got > 0 then
         turn.toFace((facing + 1) % 4)

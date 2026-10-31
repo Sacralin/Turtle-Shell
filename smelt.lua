@@ -210,11 +210,25 @@ function smelt.work()
 
   local stock = warehouse.summary()
 
-  -- fuel: charcoal, or coal to get going (only one kind at a time)
+  -- fuel: charcoal, or coal to get going (only one kind at a time);
+  -- with neither, a log, so making charcoal can always start again
+  -- from wood alone
   if not slots[2] or slots[2].count < 2 then
-    for _, name in ipairs(FUELS) do
+    local fuels = { table.unpack(FUELS) }
+    if (stock["minecraft:charcoal"] or 0) == 0 and (stock["minecraft:coal"] or 0) == 0 then
+      local best, most = nil, 0
+      for name, count in pairs(stock) do
+        if isLog(name) and count > most then
+          best, most = name, count
+        end
+      end
+      if best and most >= 4 then
+        table.insert(fuels, best)
+      end
+    end
+    for _, name in ipairs(fuels) do
       if (stock[name] or 0) > 0 and (not slots[2] or slots[2].name == name) then
-        local got = warehouse.fetch(name, math.min(FUEL_LOAD, stock[name]))
+        local got = warehouse.fetch(name, math.min(isLog(name) and 2 or FUEL_LOAD, stock[name]))
         local moved = load(name, 2, facing, got)
         if moved > 0 then
           table.insert(did, ("added %d %s as fuel"):format(moved, name:gsub("^minecraft:", "")))
