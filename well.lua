@@ -252,36 +252,56 @@ end
 
 -- ================= the rim =================
 
--- A ring of blocks round the top, at the ground's height (16 of them).
--- Returns true, or false and why not.
+-- A ring of blocks round the top, a block above the ground (16 of
+-- them): at the well's height, or one higher where the ground is (it
+-- isn't flat everywhere). Returns true, or false and why not.
+local function isRim(name)
+  for _, rim in ipairs(RIM) do
+    if name == rim then return true end
+  end
+  return false
+end
+
 local function buildRim(w)
+  local terrain = require("terrain")
+  local stop = function() return orders.has("home") end
   for dx = -2, 2 do
     for dz = -2, 2 do
       if math.abs(dx) == 2 or math.abs(dz) == 2 then
         local x, z = w.x + dx, w.z + dz
-        local ok, why = travel.to(x, w.y + 1, z, function() return orders.has("home") end)
+        local ok, why = travel.to(x, w.y + 1, z, stop)
         if not ok then
           return false, why
         end
+        local rimY = w.y
         local found, block = turtle.inspectDown()
-        local done = false
-        if found then
-          for _, name in ipairs(RIM) do
-            if block.name == name then done = true end
+        local tags = found and type(block.tags) == "table" and block.tags or {}
+        local soft = tags["minecraft:replaceable"] or tags["minecraft:small_flowers"] or tags["minecraft:flowers"]
+        if found and not isRim(block.name) and not soft and terrain.isNatural(block) then
+          -- the ground's at the well's height here: the rim goes on top of it
+          rimY = w.y + 1
+          ok, why = travel.to(x, w.y + 2, z, stop)
+          if not ok then
+            return false, why
           end
-          if not done and not block.name:find("^computercraft:") and require("terrain").isNatural(block) then
-            turtle.digDown() -- grass, a hump in the ground: the rim goes here
+          found, block = turtle.inspectDown()
+        end
+        local done = found and isRim(block.name)
+        if found and not done then
+          if block.name:find("^computercraft:") or not terrain.isNatural(block) then
+            return false, ("%s is where the rim goes, at %d %d %d"):format(block.name, x, rimY, z)
           end
+          turtle.digDown() -- grass, a flower: the rim goes here
         end
         if not done then
           if not selectFirst(RIM) then
             return false, "nothing to build the rim with"
           end
           if not turtle.placeDown() then
-            return false, ("couldn't place the rim at %d %d %d"):format(x, w.y, z)
+            return false, ("couldn't place the rim at %d %d %d"):format(x, rimY, z)
           end
         end
-        worldmap.set(x, w.y, z, "wall") -- built: go round (over) it
+        worldmap.set(x, rimY, z, "wall") -- built: go round (over) it
       end
     end
   end
