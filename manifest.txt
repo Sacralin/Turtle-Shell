@@ -19,6 +19,7 @@ build.lua
 warehouse.lua
 quarry.lua
 well.lua
+dig.lua
 scanner.lua
 forester.lua
 gatherer.lua

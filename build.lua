@@ -15,6 +15,12 @@
 -- the ground at each of the four corners, so you can see how
 -- big it is and where. Building it comes next.
 --
+-- A plan can go down into the ground too (a pit, a cellar): then
+-- plan.ground is the layer level with the ground she stands on, and
+-- the hole under it is dug out first (dig.lua), by her and the Miners,
+-- before she builds in it. Blocks that aren't placed as themselves
+-- (water: a bucket of it) say what they're placed with in plan.items.
+--
 -- The plan is kept in plan.json, in case the tracker's away,
 -- and the corners already marked in marks.json.
 -- ==================================================
@@ -73,7 +79,7 @@ end
 -- The plan: the tracker's latest, or the one we saved last time
 -- if the tracker can't be reached. Returns it, or nil and why not.
 function build.plan()
-  local plan, why = web.get("/plan")
+  local plan, why = web.get("/plan?world=" .. textutils.urlEncode(require("world").get() or ""))
   if plan then
     if not looksRight(plan) then
       return nil, "the tracker's plan doesn't look right"
@@ -102,7 +108,13 @@ function build.toWorld(plan, x, y, z)
   for _ = 1, (homeFacing - 2) % 4 do
     across, ahead = -ahead, across
   end
-  return homeX + across, homeY - 1 + y, homeZ + ahead
+  return homeX + across, homeY - 1 + y - (tonumber(plan.ground) or 0), homeZ + ahead
+end
+
+-- The item that places a block (a bucket of water for water).
+local function itemFor(plan, name)
+  local item = type(plan.items) == "table" and plan.items[name]
+  return type(item) == "string" and item or name
 end
 
 -- The four corners, one up from the bottom layer (so on top of
@@ -110,7 +122,7 @@ end
 function build.corners(plan)
   local corners = {}
   for _, c in ipairs({ { 0, 0 }, { plan.width - 1, 0 }, { plan.width - 1, plan.length - 1 }, { 0, plan.length - 1 } }) do
-    local x, y, z = build.toWorld(plan, c[1], 1, c[2])
+    local x, y, z = build.toWorld(plan, c[1], (tonumber(plan.ground) or 0) + 1, c[2])
     table.insert(corners, { x = x, y = y, z = z })
   end
   return corners
@@ -385,8 +397,9 @@ local function layerCells(plan, y)
       return nil, "layer " .. y .. " doesn't look right"
     end
     for _ = 1, count do
-      if index ~= 0 and type(name) == "string" then
-        table.insert(cells, { x = i % plan.width, z = math.floor(i / plan.width), name = name:match("^[^%[]+") })
+      if index ~= 0 and type(name) == "string" and name ~= "minecraft:air" then
+        local block = name:match("^[^%[]+")
+        table.insert(cells, { x = i % plan.width, z = math.floor(i / plan.width), name = block, item = itemFor(plan, block) })
       end
       i = i + 1
     end
@@ -477,7 +490,7 @@ local function placeCell(plan, y, cell)
     turtle.digDown() -- whatever's there: it's in the way of the plan
     sightings.gone(block, x, wy, z)
   end
-  if not selectItem(cell.name) or not placeBelow() then
+  if not selectItem(cell.item) or not placeBelow() then
     return false, "couldn't place " .. cell.name .. " (something in the way at " .. x .. " " .. wy .. " " .. z .. ")"
   end
   worldmap.set(x, wy, z, "wall")
@@ -554,6 +567,27 @@ function buildPlan(plan, box)
     return "Couldn't take up the corner markers: " .. tostring(markerWhy)
   end
   local name = plan.name or "the build"
+  -- a hole to build in: dug out first (dig.lua), with the Miners
+  local dig = require("dig")
+  local left = dig.left(plan)
+  while left and left > 0 do
+    if toldToGoHome() then
+      progress.active = false -- until Build is pressed again
+      saveProgress(progress)
+      return ("Stopped digging the hole for %s: told to go home"):format(name)
+    end
+    goal = ("digging the hole for %s: %d tasks left"):format(name, left)
+    local result = dig.work(true)
+    if not result then
+      web.setDoing(("Waiting for the hole for %s to be dug: %d tasks left, none free for me"):format(name, left))
+      travel.home(toldToGoHome)
+      sleep(WAIT)
+    elseif result:find("^Stopped") or result:find("^Waiting") then
+      return result
+    end
+    local latest = build.plan()
+    left = latest and dig.left(latest) or left
+  end
   while progress.y < plan.height do
     -- clearable: from the level she moves on (just above this
     -- layer) up. What she's built already is never in it.
@@ -574,11 +608,11 @@ function buildPlan(plan, box)
         return ("Stopped building %s at layer %d of %d"):format(name, progress.y + 1, plan.height)
       end
       local cell = cells[progress.i]
-      if carrying(cell.name) == 0 then
+      if carrying(cell.item) == 0 then
         -- what the rest of this layer still needs
         local need = {}
         for k = progress.i, #cells do
-          need[cells[k].name] = (need[cells[k].name] or 0) + 1
+          need[cells[k].item] = (need[cells[k].item] or 0) + 1
         end
         wants = {}
         for item, count in pairs(need) do
@@ -586,7 +620,7 @@ function buildPlan(plan, box)
             wants[item] = count - carrying(item)
           end
         end
-        web.setDoing(("Building %s, layer %d of %d: fetching %d %s from the warehouse"):format(name, progress.y + 1, plan.height, wants[cell.name], cell.name))
+        web.setDoing(("Building %s, layer %d of %d: fetching %d %s from the warehouse"):format(name, progress.y + 1, plan.height, wants[cell.item], cell.item))
         local got, collectWhy = collect()
         if not got then
           wants = nil
@@ -596,13 +630,13 @@ function buildPlan(plan, box)
           web.setDoing(("Building %s, layer %d of %d: waiting: %s"):format(name, progress.y + 1, plan.height, collectWhy))
         end
         local recipes = require("recipes")
-        if carrying(cell.name) == 0 then
+        if carrying(cell.item) == 0 then
           emptyVisits = emptyVisits + 1
         else
           emptyVisits = 0
         end
         local helped = false
-        if carrying(cell.name) == 0 and emptyVisits >= 2 and recipes.MINED[recipes.startOf(cell.name)] then
+        if carrying(cell.item) == 0 and emptyVisits >= 2 and recipes.MINED[recipes.startOf(cell.item)] then
           -- still nothing: she has a pickaxe and a chunk loader too, so
           -- rather than wait she joins the Miner, on the deepslate the
           -- build needs (not coal: from her home it costs more fuel to
@@ -615,7 +649,7 @@ function buildPlan(plan, box)
           helped = result ~= nil and not result:find("^Waiting")
           goal = nil
         end
-        if carrying(cell.name) == 0 and not helped then
+        if carrying(cell.item) == 0 and not helped then
           -- not there yet: wait in the warehouse's waiting spot, not on
           -- the out chest, where others stand to collect (or at home,
           -- if the spot's taken)
@@ -633,7 +667,7 @@ function buildPlan(plan, box)
         if placed then
           progress.i = progress.i + 1
           progress.placed = progress.placed or {}
-          progress.placed[cell.name] = (progress.placed[cell.name] or 0) + 1
+          progress.placed[cell.item] = (progress.placed[cell.item] or 0) + 1
           saveProgress(progress)
         elseif placeWhy == "stopped" then
           -- told to go home: the loop notices

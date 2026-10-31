@@ -191,7 +191,13 @@ local lastResume = os.clock()
 local function idleWork()
   local result = nil
   if role.get() == "Miner" then
-    result = require("quarry").work()
+    -- a plan's hole to dig comes first (it brings in deepslate and coal too)
+    if not require("quarry").isPaused() then
+      result = require("dig").work()
+    end
+    if not result then
+      result = require("quarry").work()
+    end
   elseif role.get() == "Scanner" then
     result = require("scanner").work()
   elseif role.get() == "Forester" then

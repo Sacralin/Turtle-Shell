@@ -33,9 +33,10 @@ local nav = {}
 local TRIES = 30 -- how many times to retry a blocked move before giving up
 
 -- Kept ground (the tracker's route says so: near the surface round
--- the colony, see Well.cs): the ground isn't dug, so there are no
--- holes for players to fall in. Plants and leaves still are. travel.lua
--- sets it for a step.
+-- the colony, and a build's own ground, like a pit's sides, see
+-- Well.cs): the ground isn't dug, so there are no holes for players
+-- to fall in. Plants and leaves still are. travel.lua sets it for a
+-- step.
 nav.keepGround = false
 
 local function soft(block)
@@ -90,7 +91,7 @@ local function tryMove(moveFunction, dig, attack, inspect, target, side)
         return false, "Movement obstructed" -- travel.lua goes round it
       end
       sleep(1) -- our right of way: wait for it to move
-    elseif nav.keepGround and not soft(block) and not worldmap.isClearable(x, y, z) then
+    elseif nav.keepGround and not soft(block) then
       -- kept ground: a wall for everyone (the next route goes round, over the top)
       worldmap.set(x, y, z, "wall")
       return false, ("kept ground: %s at %d %d %d"):format(block.name, x, y, z)

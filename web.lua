@@ -138,8 +138,8 @@ function web.status()
       report.wants = require("gatherer").wants() -- coal, when it's low
       report.goal = require("gatherer").goal()
     elseif report.role == "Miner" then
-      report.wants = require("quarry").wants() -- coal, when it's low
-      report.goal = require("quarry").goal()  -- what it's mining for
+      report.wants = require("quarry").wants() or require("equipment").fuelWanted() -- coal, when it's low
+      report.goal = require("dig").isActive() and require("dig").goal() or require("quarry").goal()  -- digging a plan's hole, or what it's mining for
     end
 
     -- a Crafter's warehouse: everything stored, added up
