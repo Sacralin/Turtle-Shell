@@ -63,6 +63,7 @@ local SPACING = 3
 local ROUND_EVERY = 120     -- seconds between rounds (trees take a while to grow)
 local KEEP_SAPLINGS = 16    -- saplings it keeps for replanting; the rest go to the warehouse
 local KEEP_DIRT = 64        -- dirt it keeps for levelling the farm
+local DELIVER_AT = 64       -- logs it carries before it takes them in, mid-round (the furnace needs them)
 local CLEAR_ABOVE = 8       -- blocks above each spot it clears, for the tree
 local FARM_FILE = "farm.json"
 local LEVEL_HEIGHT = 4      -- blocks above home's height it digs off the farm when levelling
@@ -831,6 +832,19 @@ local function hasDelivery()
   end) > 0 or count(isPlantable) > KEEP_SAPLINGS or count(isDirt) > KEEP_DIRT
 end
 
+-- Carrying a load: a stack of logs, or nearly full? Then it takes
+-- it in there and then, not at the end of the round: the Crafter
+-- makes charcoal from it, and a round can take a while.
+local function loaded()
+  local free = 0
+  for slot = 1, 16 do
+    if turtle.getItemCount(slot) == 0 then
+      free = free + 1
+    end
+  end
+  return hasDelivery() and (count(isLog) >= DELIVER_AT or free < 3)
+end
+
 -- Logs, sticks, apples, spare saplings and spare dirt into the in
 -- chest.
 local function deliver(house)
@@ -964,9 +978,16 @@ function forester.work()
 
   goal = ("wood: a %d x %d tree farm"):format(ROWS, COLUMNS)
   local tally, logs = {}, 0
+  local delivered = ""
   for i, tree in ipairs(forester.trees()) do
     if orders.has("home") then
       break
+    end
+    if house and loaded() then -- (wood from before a restart, or from the trees so far)
+      web.setDoing("Taking the wood to the warehouse")
+      if deliver(house) then
+        delivered = ", and took the wood to the warehouse"
+      end
     end
     web.setDoing(("Tending the tree farm: tree %d of %d"):format(i, ROWS * COLUMNS))
     local what, got = tend(tree)
@@ -985,7 +1006,6 @@ function forester.work()
     lastCanopy = os.clock()
   end
 
-  local delivered = ""
   if house and hasDelivery() then
     if deliver(house) then
       delivered = ", and took the wood to the warehouse"
