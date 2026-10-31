@@ -10,9 +10,9 @@
 --
 -- It keeps everything it digs (the colony may want it later),
 -- and when it's full it brings it all to the Crafter's in chest (where that is comes from
--- the tracker). The coal it digs goes there too: it burns charcoal
--- from the warehouse, and its own coal only when it's low and the
--- warehouse has nothing for it.
+-- the tracker). The coal it digs goes there too: it keeps its tank
+-- full from the warehouse (charcoal first), and only burns coal it's
+-- carrying when it's short of fuel on the way back from a dig.
 --
 -- What it's for decides when it goes. Every minute it looks at
 -- the warehouse:
@@ -50,7 +50,6 @@ local COAL_TARGET = 1000     -- coal to keep in the warehouse
 local LINE_GAP = 4           -- lines 4 apart: 3 blocks of rock between tunnels
 local LINE_LENGTH = 24
 local FUEL_SPARE = 300
-local KEEP_COAL = 32         -- coal it keeps for itself; the rest is delivered
 local CHECK_EVERY = 60       -- seconds between looks at what the plan needs
 
 -- how x and z change moving forward, for each facing (see position.lua)
@@ -361,20 +360,10 @@ local function deliver()
   if corrected then
     web.setDoing("I was a block out: found the in chest next to me and corrected my position")
   end
-  local coalKept = 0
-  for slot = 1, 16 do
-    local item = turtle.getItemDetail(slot)
-    if item then
-      local give = item.count
-      if item.name == "minecraft:coal" then
-        local keep = math.min(item.count, KEEP_COAL - coalKept)
-        coalKept = coalKept + keep
-        give = item.count - keep
-      end
-      if give > 0 then
-        turtle.select(slot)
-        turtle.dropDown(give)
-      end
+  for slot = 1, 16 do -- all of it, coal too (it tops up its tank from the warehouse: charcoal first)
+    if turtle.getItemCount(slot) > 0 then
+      turtle.select(slot)
+      turtle.dropDown()
     end
   end
   turtle.select(1)
@@ -596,42 +585,12 @@ function quarry.wants()
   return wants
 end
 
--- Below 40% fuel: burn any coal it has, and if that's not
--- enough, ask the warehouse for coal (the Crafter puts it in its
--- out chest) and go and get it. Returns true once it's fuelled,
--- or false and what it's waiting for.
+-- Keep the tank full from the warehouse (equipment.topUp). Returns
+-- true if it can work, or false and what it's waiting for.
 local function fuelUp(house)
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  -- charcoal before coal: the coal it digs is for the warehouse, so
-  -- it burns any charcoal it has, then fetches from the warehouse
-  -- (which gives out charcoal first), and only burns its own coal if
-  -- it's still low after that
-  equipment.refuelFromInventory(equipment.fillTarget(), { ["minecraft:charcoal"] = true })
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  local level = equipment.fuel()
-  wants = { ["minecraft:coal"] = math.min(256, math.ceil((equipment.fillTarget() - level) / 80)) }
-  if type(house.outX) == "number" and type(house.outZ) == "number" then
-    -- whatever's in the out chest so far
-    if travel.to(house.outX, house.y + 1, house.outZ) then
-      travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }) -- only the fuel: the rest is someone else's
-      equipment.refuelFromInventory(equipment.fillTarget())
-    end
-    travel.home()
-  end
-  if equipment.lowOnFuel() then
-    equipment.refuelFromInventory(equipment.fillTarget()) -- the warehouse had none: its own coal, rather than be stuck
-  end
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  return false, ("low on fuel: asked the warehouse for %d coal"):format(wants["minecraft:coal"])
+  local ok, why = equipment.topUp(house)
+  wants = equipment.fuelWanted()
+  return ok, why
 end
 
 -- What's needed: how much cobbled deepslate the plan still

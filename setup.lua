@@ -146,6 +146,8 @@ end
 
 -- Use anything useful that's been put in the inventory.
 -- Returns true once everything's there.
+local START_FUEL = 10 -- % of the tank a new turtle needs to get going
+
 local function checkRequirements()
   equipment.refuelFromInventory(equipment.fillTarget()) -- burn coal up to the job's fill level
   if role.get() == "Crafter" and position.atHome() then
@@ -170,8 +172,19 @@ local function checkRequirements()
   if fuel == "unlimited" then
     fuelDetail = "unlimited"
   end
-  -- the job's refuel point is enough to get going (it fills up when it has the coal)
-  local items = { { label = ("Fuel (%d%%)"):format(equipment.fuelRule().below), done = not equipment.lowOnFuel(), detail = fuelDetail } }
+  -- enough to get going: 10% (or the job's low point, if that's
+  -- less); its job then keeps the tank full from the warehouse. A
+  -- turtle that knows where it is and has the tracker needs only
+  -- enough to get home and back: it may have been restarted far off
+  -- and low, like a Scanner deep in a cave, with no one to give it any
+  local startAt = math.min(START_FUEL, equipment.fuelRule().below)
+  local enough = fuel == "unlimited" or fuel >= limit * startAt / 100
+  local hx, hy, hz = position.home()
+  if not enough and fuel ~= "unlimited" and web.isSetUp() and position.isSet() and hx then
+    local x, y, z = position.get()
+    enough = fuel >= (math.abs(x - hx) + math.abs(y - hy) + math.abs(z - hz)) * 2 + 200
+  end
+  local items = { { label = ("Fuel (%d%%)"):format(startAt), done = enough, detail = fuelDetail } }
   for _, tool in ipairs(tools) do
     table.insert(items, tool)
   end

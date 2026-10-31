@@ -80,10 +80,13 @@ function equipment.fuel()
   return turtle.getFuelLevel(), turtle.getFuelLimit()
 end
 
--- Fuel rules, set per job in the tracker's Warehouse tab: refuel
--- when the tank's below `below`%, up to `fillTo`%. Fetched about
--- once a minute; these are used until then (or with no tracker).
-local DEFAULT_RULES = { Scanner = { below = 2, fillTo = 5 }, Gatherer = { below = 5, fillTo = 20 } }
+-- Fuel rules, set per job in the tracker's Warehouse tab: tanks are
+-- kept topped up to `fillTo`%, and below `below`% a turtle drops
+-- everything to get fuel. Fetched about once a minute; these are
+-- used until then (or with no tracker). Fuel is life: a full tank is
+-- what a turtle has to get by (and rebuild) with if the farm or the
+-- warehouse were ever lost.
+local DEFAULT_RULES = {}
 local rule, ruleAt = nil, nil
 
 function equipment.fuelRule()
@@ -94,7 +97,7 @@ function equipment.fuelRule()
     if type(got) == "table" and type(got.below) == "number" and type(got.fillTo) == "number" then
       rule = got
     else
-      rule = rule or DEFAULT_RULES[job] or { below = 40, fillTo = 100 }
+      rule = rule or DEFAULT_RULES[job] or { below = 50, fillTo = 100 }
     end
   end
   return rule
@@ -113,6 +116,72 @@ function equipment.fillTarget()
     return 0
   end
   return math.floor(limit * equipment.fuelRule().fillTo / 100)
+end
+
+-- ================= keeping the tank full =================
+
+local TOP_UP_MARGIN = 0.10 -- of the tank: below the fill level by more than this, it tops up
+local FETCH_AFTER = 60     -- seconds after asking before it goes for it (the Crafter puts it out)
+local FETCH_EVERY = 600    -- seconds between trips for a top-up, if one came back empty
+local wanted, wantedSince, lastFetch = nil, nil, nil
+
+-- Below the fill level by more than the margin (or low)? The margin
+-- is never more than half the way down to the low point.
+function equipment.belowFill()
+  local level, limit = equipment.fuel()
+  if level == "unlimited" then
+    return false
+  end
+  local fill = equipment.fillTarget()
+  local lowPoint = limit * equipment.fuelRule().below / 100
+  local margin = math.min(limit * TOP_UP_MARGIN, (fill - lowPoint) / 2)
+  return level < fill - margin or equipment.lowOnFuel()
+end
+
+-- The fuel it's asked the warehouse for, or nil.
+function equipment.fuelWanted()
+  return wanted
+end
+
+-- Keep the tank full: whenever it's below its fill level, burn
+-- what fuel it carries (charcoal first), ask the warehouse for the
+-- rest, and a minute later (time for the Crafter to put it in the
+-- out chest) go and get it. Its job carries on meanwhile; only
+-- below the low point (lowOnFuel) does it go for fuel straight away
+-- and stop working until it has some. house: the warehouse (from
+-- the tracker), for where the out chest is. Returns true if it can
+-- work, or false and why not.
+function equipment.topUp(house)
+  if not equipment.belowFill() then
+    wanted, wantedSince = nil, nil
+    return true
+  end
+  equipment.refuelFromInventory(equipment.fillTarget())
+  if not equipment.belowFill() then
+    wanted, wantedSince = nil, nil
+    return true
+  end
+  wanted = { ["minecraft:coal"] = math.min(256, math.ceil((equipment.fillTarget() - turtle.getFuelLevel()) / 80)) }
+  wantedSince = wantedSince or os.clock()
+  local low = equipment.lowOnFuel()
+  local due = low or (os.clock() - wantedSince >= FETCH_AFTER and (not lastFetch or os.clock() - lastFetch >= FETCH_EVERY))
+  if due and type(house) == "table" and type(house.outX) == "number" and type(house.y) == "number" and type(house.outZ) == "number" then
+    lastFetch = os.clock()
+    local travel = require("travel")
+    require("web").setDoing(("%s: fetching %d fuel from the warehouse"):format(low and "Low on fuel" or "Topping up", wanted["minecraft:coal"]))
+    local isChest = function(name) return name == "minecraft:barrel" or name == "minecraft:chest" end
+    if travel.to(house.outX, house.y + 1, house.outZ) and travel.checkAbove(isChest, house.outX, house.y, house.outZ) then
+      travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true }) -- only the fuel: the rest is someone else's
+      equipment.refuelFromInventory(equipment.fillTarget())
+    end
+    if not equipment.belowFill() then
+      wanted, wantedSince = nil, nil
+    end
+  end
+  if equipment.lowOnFuel() then
+    return false, ("low on fuel: asked the warehouse for %d"):format(wanted and wanted["minecraft:coal"] or 0)
+  end
+  return true
 end
 
 -- Do we have at least this much fuel?

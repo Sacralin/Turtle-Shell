@@ -480,8 +480,11 @@ local function burn(name)
   turtle.select(1)
 end
 
+-- Keep the Crafter's own tank full from storage (whenever it's
+-- below its fill level, not only when it's low): charcoal, then logs
+-- it can spare, then coal above the reserve.
 function warehouse.topUpFuel()
-  if not equipment.lowOnFuel() then
+  if not equipment.belowFill() then
     return false
   end
   local took = false

@@ -304,8 +304,21 @@ function build.goal()
   return goal
 end
 
+-- What she's waiting for from the warehouse: this layer's blocks,
+-- and fuel to keep her tank full (equipment.topUp).
 function build.wants()
-  return wants
+  local fuel = equipment.fuelWanted()
+  if not fuel then
+    return wants
+  end
+  local all = {}
+  for name, n in pairs(wants or {}) do
+    all[name] = n
+  end
+  for name, n in pairs(fuel) do
+    all[name] = (all[name] or 0) + n
+  end
+  return all
 end
 
 local function loadProgress(version)
@@ -415,6 +428,7 @@ local function collect()
     return 0, "no warehouse: " .. tostring(why)
   end
   lastHouse = house
+  equipment.topUp() -- below her fill level? then the fuel's asked for too, and taken with the blocks
   local ok, travelWhy = travel.to(house.outX, house.y + 1, house.outZ, toldToGoHome)
   if not ok then
     return 0, "couldn't get to the out chest: " .. tostring(travelWhy)
@@ -424,12 +438,20 @@ local function collect()
   if not travel.checkAbove(isChest, house.outX, house.y, house.outZ) then
     return nil, "there's no chest under me where the out chest should be: I've lost track of where I am (run setpos)"
   end
-  -- only what this layer needs: anything else (a Miner's coal) is someone else's
+  -- only what this layer needs (and fuel, if she asked for some):
+  -- anything else (a Miner's coal) is someone else's
   local keep = {}
   for name in pairs(wants or {}) do
     keep[name] = true
   end
-  return travel.takeOnly(keep)
+  if equipment.fuelWanted() then
+    keep["minecraft:coal"], keep["minecraft:charcoal"] = true, true
+  end
+  local took = travel.takeOnly(keep)
+  if equipment.fuelWanted() then
+    equipment.refuelFromInventory(equipment.fillTarget()) -- charcoal first
+  end
+  return took
 end
 
 -- Put one block of the plan in place, from above. Returns true

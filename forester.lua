@@ -897,28 +897,11 @@ local function fetchSaplings(house)
   return got
 end
 
--- Low on fuel: burn coal it has, or ask the warehouse for some.
+-- Keep the tank full from the warehouse (equipment.topUp).
 local function fuelUp(house)
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  equipment.refuelFromInventory(equipment.fillTarget())
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  wants = { ["minecraft:coal"] = math.min(256, math.ceil((equipment.fillTarget() - turtle.getFuelLevel()) / 80)) }
-  if house and type(house.outX) == "number" and travel.to(house.outX, house.y + 1, house.outZ)
-      and travel.checkAbove(isChest, house.outX, house.y, house.outZ) then
-    travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true })
-    equipment.refuelFromInventory(equipment.fillTarget())
-  end
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  return false
+  local ok = equipment.topUp(house) -- (keeps the tank full: see equipment.lua)
+  wants = equipment.fuelWanted()
+  return ok
 end
 
 

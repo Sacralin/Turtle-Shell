@@ -65,36 +65,14 @@ function scanner.wants()
   return wants
 end
 
--- Low on fuel? It can't dig coal itself, so it asks the warehouse
--- (the Crafter puts it in its out chest) and goes to get it.
--- Returns true once it has enough, or false and why not.
+-- Keep the tank full from the warehouse (equipment.topUp): it can't
+-- dig coal itself.
 local function fuelUp()
-  -- (the Scanner's fuel rule is small by default: scans are free)
   local equipment = require("equipment")
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  equipment.refuelFromInventory(equipment.fillTarget())
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  wants = { ["minecraft:coal"] = math.min(256, math.ceil((equipment.fillTarget() - turtle.getFuelLevel()) / 80)) }
-  web.setDoing(("Low on fuel: fetching %d coal from the warehouse"):format(wants["minecraft:coal"]))
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(require("world").get() or ""))
-  if type(house) == "table" and type(house.outX) == "number" and type(house.y) == "number" and type(house.outZ) == "number" then
-    local isChest = function(name) return name == "minecraft:barrel" or name == "minecraft:chest" end
-    if travel.to(house.outX, house.y + 1, house.outZ) and travel.checkAbove(isChest, house.outX, house.y, house.outZ) then
-      travel.takeOnly({ ["minecraft:coal"] = true, ["minecraft:charcoal"] = true })
-      equipment.refuelFromInventory(equipment.fillTarget())
-    end
-  end
-  if not equipment.lowOnFuel() then
-    wants = nil
-    return true
-  end
-  return false, ("low on fuel: asked the warehouse for %d coal"):format(wants["minecraft:coal"])
+  local ok, why = equipment.topUp(house) -- (keeps the tank full: see equipment.lua)
+  wants = equipment.fuelWanted()
+  return ok, why
 end
 
 
