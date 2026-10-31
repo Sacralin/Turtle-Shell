@@ -782,9 +782,15 @@ function quarry.work(now)
   if reason == "told to go home" then
     quarry.setPaused(true) -- until Go mining
     result = result .. ". Home until Go mining"
-  elseif result:find("lost track of where I am") then
-    setLost(result)
-    result = result .. ". Stopped"
+  elseif result:find("lost track of where I am") or result:find("lost%?") then
+    -- look round and have the tracker match it to the map, before giving up
+    local found, why = require("locate").auto()
+    if found then
+      result = result .. ". Worked out where I am by looking round: carrying on"
+    else
+      setLost(result .. " (looking round didn't settle it: " .. tostring(why) .. ")")
+      result = result .. ". Stopped"
+    end
   elseif (reason and reason:find("^couldn't")) or (carrying() > 0 and emptySlots() < 4) then
     waitAfter(result) -- blocked, or full with nowhere to put it: try again in a while
     result = result .. ". Trying again in a few minutes"

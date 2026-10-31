@@ -63,8 +63,7 @@ local function checkNotMoved()
     print("I think I've been moved:")
     screen.printInColour(what, colours.yellow)
     print("")
-    print("Let's work out where I am again.")
-    sleep(4)
+    print("Working out where I am again...")
     position.forget()
   end
 end
@@ -234,7 +233,13 @@ function setup.run()
   end
   checkNotMoved()
   if not position.isSet() then
-    require("locate").run()
+    -- on its own first (looking round, the tracker matching it to
+    -- the map); then with you
+    local found, why = require("locate").auto()
+    if not found then
+      web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you")
+      require("locate").run()
+    end
   end
   if role.get() == "Crafter" and position.atHome() then
     require("craft").recover() -- in case it stopped part way through crafting

@@ -1,5 +1,9 @@
 -- ==================================================
--- locate.lua : works out where the turtle is, with your help
+-- locate.lua : works out where the turtle is
+--
+-- First on its own, with the tracker (locate.auto): it looks all
+-- round and the tracker matches that against the shared map, near
+-- where it thought it was. If that can't settle it, with your help:
 --
 -- Like the in-game GPS, but with one turtle and you:
 --   1. you look at it with F3 and type its Targeted Block
@@ -170,6 +174,100 @@ local function attempt()
     return nil, ("I worked out I'd be at %d %d %d"):format(expectX, y1, expectZ)
   end
   return x0, y0, z0, placedFacing
+end
+
+
+-- ================= on its own, with the tracker =================
+
+local MAX_LOOK_STEPS = 24 -- moves it may make (into open space) looking
+local OPEN = { ["minecraft:air"] = true, ["minecraft:cave_air"] = true, ["minecraft:water"] = true, ["minecraft:lava"] = true }
+local AHEAD = { [0] = { 1, 0 }, [1] = { 0, 1 }, [2] = { -1, 0 }, [3] = { 0, -1 } } -- (forward, right) for each turn right
+
+-- Work out where we are without anyone's help: look all round and
+-- have the tracker match it to the map, near where we thought we
+-- were; if more than one place fits, step somewhere open (never
+-- digging) and look again. It moves with the bare turtle moves, so
+-- nothing it sees goes on the map at the wrong place. Returns true
+-- (and the position's set, home kept), or false and why not.
+function locate.auto()
+  if not web.isSetUp() or not position.home() then
+    return false, "no tracker, or never been placed"
+  end
+  local nearX, nearY, nearZ, nearFacing = position.get()
+  local f, u, r, turns = 0, 0, 0, 0 -- where it is from where it started: its own front, up, right; turns right since
+  local cells, been = {}, { ["0,0,0"] = true }
+
+  -- note a block seen next to here; true if it's open
+  local function note(df, du, dr, found, block)
+    if found and block.name:find("^computercraft:") then
+      return false -- another turtle: it moves, so it says nothing
+    end
+    local open = not found or OPEN[block.name] == true
+    table.insert(cells, { f + df, u + du, r + dr, open and "o" or "s", (not open) and block.name or nil })
+    return open
+  end
+
+  for step = 0, MAX_LOOK_STEPS do
+    -- look all round
+    local ways = {}
+    for _ = 1, 4 do
+      local d = AHEAD[turns]
+      if note(d[1], 0, d[2], turtle.inspect()) then
+        table.insert(ways, { df = d[1], du = 0, dr = d[2], turns = turns })
+      end
+      turtle.turnRight()
+      turns = (turns + 1) % 4
+    end
+    if note(0, 1, 0, turtle.inspectUp()) then
+      table.insert(ways, { df = 0, du = 1, dr = 0 })
+    end
+    if note(0, -1, 0, turtle.inspectDown()) then
+      table.insert(ways, { df = 0, du = -1, dr = 0 })
+    end
+
+    web.setDoing(("Lost: working out where I am from what's round me (look %d)"):format(step + 1))
+    local reply = web.post("/locate", { world = require("world").get() or "",
+      near = { nearX, nearY, nearZ }, facing = nearFacing, radius = 32, cells = cells })
+    if type(reply) ~= "table" then
+      return false, "the tracker isn't answering"
+    end
+    if reply.found == true and type(reply.start) == "table" and type(reply.facing) == "number" then
+      local sx, sy, sz, k = reply.start[1], reply.start[2], reply.start[3], reply.facing
+      if type(sx) ~= "number" or type(sy) ~= "number" or type(sz) ~= "number" or k < 0 or k > 3 then
+        return false, "the tracker's answer made no sense"
+      end
+      local right = (k + 1) % 4
+      position.moveTo(sx + f * STEP_X[k] + r * STEP_X[right], sy + u, sz + f * STEP_Z[k] + r * STEP_Z[right], (k + turns) % 4)
+      position.noteSurroundings()
+      return true
+    end
+
+    -- more than one place fits (or none yet): a step somewhere open it hasn't been
+    local moved = false
+    for _, way in ipairs(ways) do
+      local key = (f + way.df) .. "," .. (u + way.du) .. "," .. (r + way.dr)
+      if not been[key] then
+        local go = way.du > 0 and turtle.up or way.du < 0 and turtle.down or nil
+        if not go then
+          while turns ~= way.turns do
+            turtle.turnRight()
+            turns = (turns + 1) % 4
+          end
+          go = turtle.forward
+        end
+        if go() then
+          f, u, r = f + way.df, u + way.du, r + way.dr
+          been[key] = true
+          moved = true
+          break
+        end
+      end
+    end
+    if not moved then
+      return false, ("%d places fit, and nowhere new to look from"):format(tonumber(reply.fits) or 0)
+    end
+  end
+  return false, "still more than one place fits"
 end
 
 
