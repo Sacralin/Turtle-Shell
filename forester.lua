@@ -343,135 +343,143 @@ local function fellFrom(trunkX, baseY, trunkZ)
   return dug
 end
 
--- ================= clearing wood and leaves (a flood) =================
--- It keeps a list of the wood and leaves it has seen in an area.
--- To clear them, it goes to the nearest, digs it out, steps into
--- the gap and looks all round (up, down and all four sides), and
--- whatever wood or leaves it sees there in the area go on the
--- list; then the next nearest, until the list is empty. So it
--- follows the leaves and branches wherever they go, and only
--- where they are. Wood and leaves only: never anything else.
+-- ================= clearing wood and leaves =================
+-- It looks round from where it is: up and down (no turning needed),
+-- and to the sides it hasn't looked at yet that are in the area
+-- it's clearing, turning the shortest way each time. Whatever it
+-- sees there that's to be cleared it digs there and then, and the
+-- gap it leaves is somewhere to look from next: it steps into the
+-- nearest gap and looks round again, until there are none. So every
+-- turn either clears something or isn't made at all.
 
 local function key(x, y, z)
   return x .. "," .. y .. "," .. z
 end
 
--- Look up, down and in front (and to all four sides if allSides),
--- and note what's to be cleared (wants(name, x, y, z): wood or
--- leaves in the area) in seen ("x,y,z" -> { x, y, z }); anything
--- else seen there comes off.
-local function lookAround(seen, wants, allSides)
-  local x, y, z, facing = position.get()
-  local function note(found, block, bx, by, bz)
-    if found and wants(block.name, bx, by, bz) then
-      seen[key(bx, by, bz)] = { x = bx, y = by, z = bz }
-    else
-      seen[key(bx, by, bz)] = nil
-    end
+-- A clearing: area(x, y, z) is where it's clearing; takes(name, x,
+-- y, z) is what it digs there.
+local function newClearing(area, takes)
+  return { area = area, takes = takes, seen = {}, gaps = {}, dug = 0 }
+end
+
+-- Look at one block next to here (once), and dig it if it's to go.
+local function lookAt(c, inspect, dig, x, y, z)
+  local k = key(x, y, z)
+  if c.seen[k] or not c.area(x, y, z) then
+    return
   end
-  local found, block = turtle.inspectUp()
-  note(found, block, x, y + 1, z)
-  found, block = turtle.inspectDown()
-  note(found, block, x, y - 1, z)
-  for turns = 0, allSides and 3 or 0 do
-    local f = (facing + turns) % 4
-    turn.toFace(f)
-    found, block = turtle.inspect()
-    note(found, block, x + STEP_X[f], y, z + STEP_Z[f])
+  c.seen[k] = true
+  local found, block = inspect()
+  if found and c.takes(block.name, x, y, z) and dig() then
+    c.dug = c.dug + 1
+    c.gaps[k] = { x = x, y = y, z = z }
   end
 end
 
--- Clear everything on the list, and what it finds as it goes (see
--- above), at most limit blocks. Returns how many it dug.
-local function flood(seen, wants, limit)
-  local dug = 0
+-- Look (and dig) up, down, and to the sides not looked at yet.
+local function lookAround(c)
+  local x, y, z, facing = position.get()
+  c.seen[key(x, y, z)] = true
+  lookAt(c, turtle.inspectUp, turtle.digUp, x, y + 1, z)
+  lookAt(c, turtle.inspectDown, turtle.digDown, x, y - 1, z)
+  local ways = {}
+  for f = 0, 3 do
+    local bx, bz = x + STEP_X[f], z + STEP_Z[f]
+    if not c.seen[key(bx, y, bz)] and c.area(bx, y, bz) then
+      ways[f] = true
+    end
+  end
+  while next(ways) do
+    local best, bestTurns = nil, 5 -- the nearest way round from where it faces
+    for f in pairs(ways) do
+      local turns = math.min((f - facing) % 4, (facing - f) % 4)
+      if turns < bestTurns then
+        best, bestTurns = f, turns
+      end
+    end
+    ways[best] = nil
+    turn.toFace(best)
+    facing = best
+    lookAt(c, turtle.inspect, turtle.dig, x + STEP_X[best], y, z + STEP_Z[best])
+  end
+end
+
+-- Into a gap next to here. True if it moved.
+local function stepInto(g)
+  local x, y, z = position.get()
+  if g.y > y then
+    return moveUp()
+  elseif g.y < y then
+    return moveDown()
+  end
+  turn.toFace(g.x > x and 1 or g.x < x and 3 or g.z > z and 2 or 0)
+  return move.forward()
+end
+
+-- Clear on from the gaps made so far: into the nearest, look round,
+-- and so on, until there are none (or limit dug). Returns all dug.
+local function flood(c, limit)
   local stop = function() return orders.has("home") end
-  while dug < limit and not stop() do
-    -- the nearest on the list
+  while c.dug < limit and not stop() do
     local x, y, z = position.get()
     local target, best = nil, math.huge
-    for _, t in pairs(seen) do
-      local d = math.abs(t.x - x) + math.abs(t.y - y) + math.abs(t.z - z)
+    for _, g in pairs(c.gaps) do
+      local d = math.abs(g.x - x) + math.abs(g.y - y) + math.abs(g.z - z)
       if d < best then
-        target, best = t, d
+        target, best = g, d
       end
     end
     if not target then
       break
     end
-    seen[key(target.x, target.y, target.z)] = nil
-
-    -- get next to it, if it isn't already
-    if best > 1 then
-      local around = {}
-      for _, d in ipairs({ { 0, -1, 0 }, { 0, 1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }) do
-        local nx, ny, nz = target.x + d[1], target.y + d[2], target.z + d[3]
-        if not seen[key(nx, ny, nz)] then
-          table.insert(around, { x = nx, y = ny, z = nz, d = math.abs(nx - x) + math.abs(ny - y) + math.abs(nz - z) })
-        end
-      end
-      table.sort(around, function(a, b) return a.d < b.d end)
-      for _, n in ipairs(around) do
-        if travel.to(n.x, n.y, n.z, stop) then
-          break
-        end
-      end
-      x, y, z = position.get()
+    c.gaps[key(target.x, target.y, target.z)] = nil
+    local arrived
+    if best == 1 then
+      arrived = stepInto(target)
+    else
+      arrived = travel.to(target.x, target.y, target.z, stop)
     end
-    if math.abs(target.x - x) + math.abs(target.y - y) + math.abs(target.z - z) == 1 then
-      -- dig it (if it's still wood or leaves), go in, look round
-      local inspect, digIt, go
-      if target.y > y then
-        inspect, digIt, go = turtle.inspectUp, turtle.digUp, move.up
-      elseif target.y < y then
-        inspect, digIt, go = turtle.inspectDown, turtle.digDown, move.down
-      else
-        turn.toFace(target.x > x and 1 or target.x < x and 3 or target.z > z and 2 or 0)
-        inspect, digIt, go = turtle.inspect, turtle.dig, move.forward
-      end
-      local found, block = inspect()
-      if found and wants(block.name, target.x, target.y, target.z) and digIt() then
-        dug = dug + 1
-        if go() then
-          lookAround(seen, wants, true)
-        end
-      end
+    if arrived then
+      lookAround(c)
     end
   end
-  return dug
+  return c.dug
 end
 
--- Clear the leaves of the tree we've just felled, standing in its bottom log's spot. Left to decay, the
--- leaves drop their saplings wherever they fall, often out of
--- reach, and they're gone in 5 minutes; dug with the axe they drop
--- the same, straight into the turtle. Up the empty trunk looking
--- round, then a flood out from what it saw, within LEAF_REACH of
--- the trunk. Comes back to where it started.
+-- Clear the leaves of the tree we've just felled, standing in its
+-- bottom log's spot. Left to decay, the leaves drop their saplings
+-- wherever they fall, often out of reach, and they're gone in 5
+-- minutes; dug with the axe they drop the same, straight into the
+-- turtle. Up the empty trunk looking round (and digging) at each
+-- height, then on through the gaps, within LEAF_REACH of the trunk.
+-- Leaves only: the next tree's trunk may be in reach. Comes back to
+-- where it started. Returns leaves dug.
 local function clearLeaves(trunkX, baseY, trunkZ)
-  local function inReach(name, x, y, z) -- leaves only: the next tree's trunk may be in reach
-    return isLeaves(name) and y > baseY and y <= baseY + LEAF_HEIGHT
+  local startX, startY, startZ = position.get()
+  local c = newClearing(function(x, y, z)
+    return y > baseY and y <= baseY + LEAF_HEIGHT
       and math.abs(x - trunkX) <= LEAF_REACH and math.abs(z - trunkZ) <= LEAF_REACH
-  end
-  local seen = {}
+  end, function(name)
+    return isLeaves(name)
+  end)
   local up = 0
   while up < LEAF_HEIGHT do
     local found, block = turtle.inspectUp()
     if found and not (isLeaves(block.name) and turtle.digUp()) then
       break -- something that isn't leaves: stop there
     end
+    if found then
+      c.dug = c.dug + 1
+    end
     if not move.up() then
       break
     end
     up = up + 1
-    lookAround(seen, inReach, true)
+    lookAround(c)
   end
-  for _ = 1, up do
-    moveDown()
-  end
-  local x, y, z = position.get()
-  local dug = flood(seen, inReach, MAX_LEAVES)
-  travel.to(x, y, z) -- back to the trunk's spot
-  return dug
+  flood(c, MAX_LEAVES)
+  travel.to(startX, startY, startZ) -- back to the trunk's spot
+  return c.dug
 end
 
 -- Fell the tree in front of us (its bottom log at x, y, z), and
@@ -593,14 +601,15 @@ local function levelFarm()
   return true, dug, filled
 end
 
--- Clear the branches and leaves over the farm: they grow
--- in over the spots from the trees round them (big oaks
--- especially), and a sapling under them can't grow. From where it
--- stands to tend each spot it goes up, looking at the column over
--- the spot (and up), to CANOPY_HEIGHT; then a flood (see above)
--- clears what it saw and everything joined to it, over the farm and
--- a little past its sides. Never lower than home + 1, so the
--- saplings stay. Returns blocks dug.
+-- Clear the branches and leaves over the farm: they grow in over
+-- the spots from the trees round them (big oaks especially), and a
+-- sapling under them can't grow. From where it stands to tend each
+-- spot it goes up the column beside it, digging what's over the spot
+-- as it goes; where it finds anything, it looks round there (digging
+-- as it looks) and clears on through the gaps (see above), over the
+-- farm and a little past its sides, to CANOPY_HEIGHT. Never lower
+-- than home + 1, so the saplings stay, and never a farm tree's trunk
+-- (that's felled when it's grown). Returns blocks dug.
 local function clearCanopy()
   local hx, hy, hz, facing = position.home()
   local right = (facing + 1) % 4
@@ -610,48 +619,47 @@ local function clearCanopy()
   for _, tree in ipairs(forester.trees()) do
     trunks[tree.x .. "," .. tree.z] = true
   end
-  local function overFarm(name, x, y, z)
-    if not (isLeaves(name) or (isLog(name) and not trunks[x .. "," .. z])) then
-      return false -- leaves and branches: a farm tree's trunk is felled when it's grown
-    end
+  local c = newClearing(function(x, y, z)
     local dx, dz = x - hx, z - hz
     local ahead = dx * STEP_X[facing] + dz * STEP_Z[facing]
     local across = dx * STEP_X[right] + dz * STEP_Z[right]
     return y > hy and y <= hy + CANOPY_HEIGHT and ahead >= first and ahead <= last and across >= low and across <= high
-  end
-  local seen = {}
-  local dug = 0
+  end, function(name, x, y, z)
+    return isLeaves(name) or (isLog(name) and not trunks[x .. "," .. z])
+  end)
   local stop = function() return orders.has("home") end
   for _, tree in ipairs(forester.trees()) do
     if stop() then
       break
     end
     if travel.to(tree.standX, hy, tree.standZ, stop) then
-      turn.toFace(facing) -- the spot's in front
       local up = 0
       while up < CANOPY_HEIGHT - 1 do
+        local x, y, z = position.get()
         local found, block = turtle.inspectUp()
-        local _, y = position.get()
-        if found and not (overFarm(block.name, tree.standX, y + 1, tree.standZ) and turtle.digUp()) then
-          break -- something it mustn't dig: as high as it can go here
-        end
         if found then
-          dug = dug + 1
+          if not (c.area(x, y + 1, z) and c.takes(block.name, x, y + 1, z) and turtle.digUp()) then
+            break -- something it mustn't dig: as high as it can go here
+          end
+          c.dug = c.dug + 1
         end
         if not move.up() then
           break
         end
         up = up + 1
-        -- over the spot and above; and all round, where it's in among them
-        lookAround(seen, overFarm, found)
+        c.seen[key(x, y + 1, z)] = true
+        local before = c.dug
         turn.toFace(facing)
+        lookAt(c, turtle.inspect, turtle.dig, x + STEP_X[facing], y + 1, z + STEP_Z[facing]) -- over the spot
+        if found or c.dug > before then
+          lookAround(c) -- in among them: all round
+        end
       end
-      for _ = 1, up do
-        moveDown()
-      end
+      flood(c, 2000) -- on through what it opened up, while it's up there
+      travel.to(tree.standX, hy, tree.standZ, stop)
     end
   end
-  return dug + flood(seen, overFarm, 2000)
+  return c.dug
 end
 
 -- Get a spot ready: level with home, dirt under it, nothing above

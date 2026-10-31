@@ -116,9 +116,13 @@ end
 -- The changes waiting to go to the tracker, oldest first (at most
 -- max): a list of { x, y, z, "o" open / "w" wall / "u" unknown }.
 function worldmap.changes(max)
-  local kept, list = {}, {}
+  local kept, list, listed = {}, {}, {}
   for _, cellKey in ipairs(order) do
-    if pending[cellKey] then
+    -- each spot once (it can be in the order twice: changed, sent,
+    -- and changed again before the order was tidied; twice in a
+    -- report and the report can't be made)
+    if pending[cellKey] and not listed[cellKey] then
+      listed[cellKey] = true
       table.insert(kept, cellKey)
       if #list < max then
         table.insert(list, pending[cellKey])
