@@ -198,6 +198,9 @@ local function idleWork()
     result = require("forester").work()
   elseif role.get() == "Gatherer" then
     result = require("gatherer").work()
+  elseif role.get() == "Builder" and not require("build").isActive() and os.clock() - lastResume > RESUME_EVERY then
+    lastResume = os.clock()
+    result = require("well").work() -- (no build on: the well still gets dug)
   elseif role.get() == "Builder" and require("build").isActive() and os.clock() - lastResume > RESUME_EVERY then
     -- a build that stopped part way (not by "home"): carry on
     lastResume = os.clock()

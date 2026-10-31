@@ -90,6 +90,47 @@ local function getQuarry()
   return q
 end
 
+-- The colony's well (the tracker's: Well.cs), with the way out from
+-- it this Miner's quarry goes; or nil if there's none.
+local function wellFor()
+  local w = web.get(("/well?world=%s&id=%d"):format(textutils.urlEncode(require("world").get() or ""), os.getComputerID()))
+  if type(w) ~= "table" or type(w.x) ~= "number" or type(w.y) ~= "number" or type(w.z) ~= "number"
+      or type(w.dugTo) ~= "number" or type(w.direction) ~= "number" or type(w.quarryFrom) ~= "number" then
+    return nil
+  end
+  return w
+end
+
+-- Once there's a well, the quarry is off it: its lines start
+-- quarryFrom out from the well, the way the tracker gives this
+-- Miner (each its own), and it gets there down the well and along a
+-- tunnel, never through the ground near the surface. Returns the
+-- quarry, and nil or why it can't go yet (the well isn't down to
+-- this level yet, and it has no quarry of its own from before).
+local function quarryFor(level)
+  local q = getQuarry()
+  local w = wellFor()
+  if not w then
+    return q -- no tracker or no well: the quarry behind home
+  end
+  if w.dugTo > level then
+    -- its own shaft from before (it's dug lines off it): that hole's there already
+    local ownShaft = not q.well and (q.ownShaft or next(q.lines or {}) ~= nil or (q.line or 1) > 1)
+    if ownShaft then
+      return q
+    end
+    return q, ("waiting for the well to be dug down to y=%d (it's at y=%d)"):format(level, w.dugTo)
+  end
+  if not (q.well and q.well.x == w.x and q.well.z == w.z and q.direction == w.direction) then
+    q.well = { x = w.x, y = w.y, z = w.z }
+    q.direction = w.direction
+    q.entrance = { x = w.x + STEP_X[w.direction] * w.quarryFrom, y = w.y, z = w.z + STEP_Z[w.direction] * w.quarryFrom }
+    q.lines, q.line = {}, 1
+    save(q)
+  end
+  return q
+end
+
 -- A Miner mines. Only two things stop it:
 --   - "Return home" from the tracker (toldHome), until "Go mining";
 --   - losing track of where it is (lost): it'd dig and drop things
@@ -426,17 +467,34 @@ end
 -- saying how it went.
 function quarry.trip(atLevel)
   level = atLevel or LEVEL
-  local q = getQuarry()
+  local q, waitWhy = quarryFor(level)
+  if waitWhy then
+    return "Didn't quarry: " .. waitWhy, waitWhy
+  end
   local e = q.entrance
   readLimits(findWarehouse())
 
   local stop = function() return orders.has("home") end
-  web.setDoing(("Going to the quarry at %d %d %d"):format(e.x, e.y, e.z))
-  local ok, why = travel.to(e.x, e.y, e.z, stop)
-  local viaTop = ok
-  if ok then
+  local ok, why, viaTop
+  if q.well then
+    -- down the well, and along to where the quarry starts
+    web.setDoing(("Going down the well to the quarry at %d %d %d"):format(e.x, level, e.z))
+    ok, why = travel.to(e.x, level, e.z, stop)
+    viaTop = false
+  else
+    web.setDoing(("Going to the quarry at %d %d %d"):format(e.x, e.y, e.z))
+    ok, why = travel.to(e.x, e.y, e.z, stop)
+    viaTop = ok
+  end
+  if q.well then
+    -- (there already)
+  elseif ok then
     web.setDoing("Going down the shaft to y=" .. level)
     ok, why = nav.toY(level)
+    if ok and not q.ownShaft then
+      q.ownShaft = true -- (dug: it's there now)
+      save(q)
+    end
   elseif why ~= "stopped" then
     -- the top of the shaft can't be got to (something's been built
     -- over it: the citadel): the tracker's way to the bottom of it,
@@ -649,7 +707,9 @@ function quarry.returnHome()
   local _, y = position.get()
   if q.entrance and y < q.entrance.y then
     local ok, why = toShaft(q)
-    if ok then ok, why = nav.toY(q.entrance.y) end
+    if ok and not q.well then
+      ok, why = nav.toY(q.entrance.y) -- up its own shaft (from the well, the way home's the tracker's: up the well)
+    end
     if not ok then
       return false, why
     end
@@ -844,6 +904,9 @@ function quarry.work(now, deepslateOnly)
       setLost(result .. " (looking round didn't settle it: " .. tostring(why) .. ")")
       result = result .. ". Stopped"
     end
+  elseif reason and reason:find("^waiting for the well") then
+    waitAfter(result) -- the Builder's digging it: look again in a while
+    result = result .. ". Trying again in a few minutes"
   elseif (reason and reason:find("^couldn't")) or (carrying() > 0 and emptySlots() < 4) then
     waitAfter(result) -- blocked, or full with nowhere to put it: try again in a while
     result = result .. ". Trying again in a few minutes"

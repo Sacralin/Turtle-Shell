@@ -32,6 +32,18 @@ local nav = {}
 
 local TRIES = 30 -- how many times to retry a blocked move before giving up
 
+-- Kept ground (the tracker's route says so: near the surface round
+-- the colony, see Well.cs): the ground isn't dug, so there are no
+-- holes for players to fall in. Plants and leaves still are. travel.lua
+-- sets it for a step.
+nav.keepGround = false
+
+local function soft(block)
+  local tags = type(block.tags) == "table" and block.tags or {}
+  return tags["minecraft:replaceable"] or tags["minecraft:flowers"] or tags["minecraft:leaves"]
+    or tags["minecraft:saplings"] or false
+end
+
 
 -- Another turtle on that side: should we give way to it? The
 -- lower computer ID gives way. (If its ID can't be read, there's
@@ -78,6 +90,10 @@ local function tryMove(moveFunction, dig, attack, inspect, target, side)
         return false, "Movement obstructed" -- travel.lua goes round it
       end
       sleep(1) -- our right of way: wait for it to move
+    elseif nav.keepGround and not soft(block) and not worldmap.isClearable(x, y, z) then
+      -- kept ground: a wall for everyone (the next route goes round, over the top)
+      worldmap.set(x, y, z, "wall")
+      return false, ("kept ground: %s at %d %d %d"):format(block.name, x, y, z)
     elseif terrain.isNatural(block) or worldmap.isClearable(x, y, z) then
       -- natural ground, or anything in the way in a build's area
       if dig() then

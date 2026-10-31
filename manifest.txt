@@ -18,6 +18,7 @@ mining.lua
 build.lua
 warehouse.lua
 quarry.lua
+well.lua
 scanner.lua
 forester.lua
 gatherer.lua

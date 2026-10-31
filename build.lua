@@ -308,14 +308,18 @@ end
 -- and fuel to keep her tank full (equipment.topUp).
 function build.wants()
   local fuel = equipment.fuelWanted()
-  if not fuel then
+  local forWell = require("well").wants() -- ladders
+  if not fuel and not forWell then
     return wants
   end
   local all = {}
   for name, n in pairs(wants or {}) do
     all[name] = n
   end
-  for name, n in pairs(fuel) do
+  for name, n in pairs(forWell or {}) do
+    all[name] = (all[name] or 0) + n
+  end
+  for name, n in pairs(fuel or {}) do
     all[name] = (all[name] or 0) + n
   end
   return all
@@ -524,6 +528,11 @@ local buildPlan -- below
 -- it's finished or she's told to go home. Returns a sentence.
 -- Anything in the way inside the plan's area gets cleared.
 function build.run()
+  -- the well first: it's the Miners' way down (well.lua)
+  local wellResult = require("well").work()
+  if wellResult then
+    return wellResult
+  end
   local plan, why = build.plan()
   if not plan then
     return "Couldn't build: " .. why

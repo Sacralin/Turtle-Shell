@@ -43,9 +43,10 @@ local MAX_REPLANS = 60    -- give up after this many surprises in one trip
 local LOST_AFTER = 3      -- steps in a row the tracker said were open but weren't: lost?
 
 
--- Move one block to a neighbouring spot. Returns true, or false
--- and why not; and whether something solid was there (not a turtle).
-local function stepTo(x, y, z)
+-- Move one block to a neighbouring spot (keep: kept ground, not to
+-- be dug). Returns true, or false and why not; and whether something
+-- solid was there (not a turtle).
+local function stepTo(x, y, z, keep)
   local myX, myY, myZ = position.get()
   local inspect, go
   if y > myY then
@@ -67,7 +68,9 @@ local function stepTo(x, y, z)
   local found, block = inspect()
   local solid = found and not block.name:find("^computercraft:")
     and block.name ~= "minecraft:water" and block.name ~= "minecraft:lava"
+  nav.keepGround = keep == true
   local ok, why = go()
+  nav.keepGround = false
   return ok, why, solid
 end
 
@@ -213,7 +216,7 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
       if shouldStop and shouldStop() then
         return false, "stopped"
       end
-      local ok, reason, solid = stepTo(block.x, block.y, block.z)
+      local ok, reason, solid = stepTo(block.x, block.y, block.z, block.expect == "n")
       if block.expect == "o" then
         if solid then
           surprises = surprises + 1
