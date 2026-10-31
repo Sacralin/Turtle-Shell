@@ -258,92 +258,6 @@ local function moveDown()
   return moveVertically(move.down, turtle.inspectDown, clearDown)
 end
 
--- Fell the tree we're standing in (in its bottom log's spot):
--- every log touching one it's dug, above, below or beside, it digs
--- and goes into, and back. Where a branch ends it also looks round
--- the corners, through the leaves, as big oaks' branches go off at
--- an angle. Only within MAX_REACH of the trunk, and no lower than
--- its bottom. Comes back to where it started.
-local function fellFrom(trunkX, baseY, trunkZ)
-  local dug = 0
-  local function reachable(x, y, z)
-    return dug < MAX_LOGS and y >= baseY and y <= baseY + 32
-      and math.abs(x - trunkX) <= MAX_REACH and math.abs(z - trunkZ) <= MAX_REACH
-  end
-  local visit
-
-  -- the log above / below / in front (facing f): dig it, go in, follow, come back
-  local function up(x, y, z)
-    local found, block = turtle.inspectUp()
-    if found and isLog(block.name) and reachable(x, y + 1, z) and turtle.digUp() then
-      dug = dug + 1
-      if move.up() then
-        visit()
-        moveDown()
-      end
-      return true
-    end
-    return false
-  end
-  local function down(x, y, z)
-    local found, block = turtle.inspectDown()
-    if found and isLog(block.name) and reachable(x, y - 1, z) and turtle.digDown() then
-      dug = dug + 1
-      if move.down() then
-        visit()
-        moveUp()
-      end
-      return true
-    end
-    return false
-  end
-  local function ahead(f, x, y, z)
-    turn.toFace(f)
-    local found, block = turtle.inspect()
-    if found and isLog(block.name) and reachable(x + STEP_X[f], y, z + STEP_Z[f]) and turtle.dig() then
-      dug = dug + 1
-      if move.forward() then
-        visit()
-        turn.toFace(f)
-        move.back()
-      end
-      return true
-    end
-    return false
-  end
-
-  visit = function()
-    local x, y, z = position.get()
-    local any = up(x, y, z)
-    for f = 0, 3 do
-      any = ahead(f, x, y, z) or any
-    end
-    any = down(x, y, z) or any
-    if any or y == baseY then
-      return
-    end
-    -- the end of a branch: round the corners, through the leaves
-    for f = 0, 3 do
-      local nx, nz = x + STEP_X[f], z + STEP_Z[f]
-      if reachable(nx, y, nz) then
-        turn.toFace(f)
-        local found, block = turtle.inspect()
-        if (not found or isLeaves(block.name)) and (not found or turtle.dig()) and move.forward() then
-          up(nx, y, nz)
-          ahead((f + 1) % 4, nx, y, nz)
-          ahead((f + 3) % 4, nx, y, nz)
-          down(nx, y, nz)
-          turn.toFace(f)
-          move.back()
-        end
-      end
-    end
-  end
-
-  visit()
-  return dug
-end
-
 -- ================= clearing wood and leaves =================
 -- It looks round from where it is: up and down (no turning needed),
 -- and to the sides it hasn't looked at yet that are in the area
@@ -357,6 +271,13 @@ local function key(x, y, z)
   return x .. "," .. y .. "," .. z
 end
 
+-- Spots found empty (or cleared) this round: leaves don't grow back
+-- within a round, so it never looks at them again, whichever tree
+-- it's clearing round (they're 3 apart: their leaves overlap) or the
+-- farm's canopy. Spots with something it left there (a neighbour's
+-- trunk) aren't kept: another clearing may be the one to take them.
+local emptyThisRound = {}
+
 -- A clearing: area(x, y, z) is where it's clearing; takes(name, x,
 -- y, z) is what it digs there.
 local function newClearing(area, takes)
@@ -366,14 +287,17 @@ end
 -- Look at one block next to here (once), and dig it if it's to go.
 local function lookAt(c, inspect, dig, x, y, z)
   local k = key(x, y, z)
-  if c.seen[k] or not c.area(x, y, z) then
+  if c.seen[k] or emptyThisRound[k] or not c.area(x, y, z) then
     return
   end
   c.seen[k] = true
   local found, block = inspect()
-  if found and c.takes(block.name, x, y, z) and dig() then
+  if not found then
+    emptyThisRound[k] = true
+  elseif c.takes(block.name, x, y, z) and dig() then
     c.dug = c.dug + 1
     c.gaps[k] = { x = x, y = y, z = z }
+    emptyThisRound[k] = true
   end
 end
 
@@ -381,12 +305,13 @@ end
 local function lookAround(c)
   local x, y, z, facing = position.get()
   c.seen[key(x, y, z)] = true
+  emptyThisRound[key(x, y, z)] = true -- it's in it
   lookAt(c, turtle.inspectUp, turtle.digUp, x, y + 1, z)
   lookAt(c, turtle.inspectDown, turtle.digDown, x, y - 1, z)
   local ways = {}
   for f = 0, 3 do
     local bx, bz = x + STEP_X[f], z + STEP_Z[f]
-    if not c.seen[key(bx, y, bz)] and c.area(bx, y, bz) then
+    if not c.seen[key(bx, y, bz)] and not emptyThisRound[key(bx, y, bz)] and c.area(bx, y, bz) then
       ways[f] = true
     end
   end
@@ -447,40 +372,187 @@ local function flood(c, limit)
   return c.dug
 end
 
--- Clear the leaves of the tree we've just felled, standing in its
--- bottom log's spot. Left to decay, the leaves drop their saplings
--- wherever they fall, often out of reach, and they're gone in 5
--- minutes; dug with the axe they drop the same, straight into the
--- turtle. Up the empty trunk looking round (and digging) at each
--- height, then on through the gaps, within LEAF_REACH of the trunk.
--- Leaves only: the next tree's trunk may be in reach. Comes back to
--- where it started. Returns leaves dug.
-local function clearLeaves(trunkX, baseY, trunkZ)
-  local startX, startY, startZ = position.get()
-  local c = newClearing(function(x, y, z)
-    return y > baseY and y <= baseY + LEAF_HEIGHT
-      and math.abs(x - trunkX) <= LEAF_REACH and math.abs(z - trunkZ) <= LEAF_REACH
-  end, function(name)
-    return isLeaves(name)
-  end)
-  local up = 0
-  while up < LEAF_HEIGHT do
-    local found, block = turtle.inspectUp()
-    if found and not (isLeaves(block.name) and turtle.digUp()) then
-      break -- something that isn't leaves: stop there
+-- Sweep a felled tree's leaves: the square SWEEP_REACH round the
+-- trunk, in rows back and forth, digging the leaves ahead, above and
+-- below as it goes (so each pass clears 3 layers, and it only turns
+-- at the end of a row). One pass at the top log's height, and one 3
+-- lower: oak and birch leaves grow from 3 below the top to 1 above
+-- it. Leaves only: anything else in the way (a neighbour's branch)
+-- it goes round. Never lower than 2 above the bottom log. Returns
+-- leaves dug.
+local SWEEP_REACH = 2
+
+local function sweepLeaves(trunkX, baseY, trunkZ, topY)
+  local dug = 0
+  local function digIf(inspect, dig, y)
+    local found, block = inspect()
+    if found and isLeaves(block.name) and y >= baseY + 2 and dig() then
+      dug = dug + 1
     end
-    if found then
-      c.dug = c.dug + 1
-    end
-    if not move.up() then
-      break
-    end
-    up = up + 1
-    lookAround(c)
   end
-  flood(c, MAX_LEAVES)
-  travel.to(startX, startY, startZ) -- back to the trunk's spot
-  return c.dug
+  -- to the next spot in the row: dig the leaves in the way, or go round
+  local function stepTo(x, y, z)
+    local myX, myY, myZ = position.get()
+    if myY == y and math.abs(x - myX) + math.abs(z - myZ) == 1 then
+      turn.toFace(x > myX and 1 or x < myX and 3 or z > myZ and 2 or 0)
+      local found, block = turtle.inspect()
+      if found and isLeaves(block.name) and turtle.dig() then
+        dug = dug + 1
+        found = false
+      end
+      if not found and move.forward() then
+        return true
+      end
+    end
+    return travel.to(x, y, z, function() return orders.has("home") end)
+  end
+  -- the crown, over the top: up into it, a look above, and back
+  local found, block = turtle.inspectUp()
+  if found and isLeaves(block.name) and turtle.digUp() then
+    dug = dug + 1
+    if move.up() then
+      digIf(turtle.inspectUp, turtle.digUp, topY + 2)
+      moveDown()
+    end
+  end
+  for _, y in ipairs({ topY, topY - 3 }) do
+    if y + 1 >= baseY + 2 then -- (a pass clears y - 1 to y + 1: worth it if any of that's high enough)
+      for row = -SWEEP_REACH, SWEEP_REACH do
+        local from, to, by = -SWEEP_REACH, SWEEP_REACH, 1
+        if (row + SWEEP_REACH) % 2 == 1 then
+          from, to, by = SWEEP_REACH, -SWEEP_REACH, -1 -- back the other way
+        end
+        for col = from, to, by do
+          if orders.has("home") then
+            return dug
+          end
+          if stepTo(trunkX + row, y, trunkZ + col) then
+            digIf(turtle.inspectUp, turtle.digUp, y + 1)
+            digIf(turtle.inspectDown, turtle.digDown, y - 1)
+          end
+        end
+      end
+    end
+  end
+  return dug
+end
+
+-- Fell the tree we're standing in (in its bottom log's spot):
+-- every log touching one it's dug, above, below or beside, it digs
+-- and goes into, and back. Where a branch ends it also looks round
+-- the corners, through the leaves, as big oaks' branches go off at
+-- an angle. Only within MAX_REACH of the trunk, and no lower than
+-- its bottom. Comes back to where it started.
+-- Trees that grow straight up, never a branch: their trunk's just
+-- dug up and down (no looking round each log for branches).
+local function growsStraight(name)
+  return type(name) == "string" and (name:find("birch_log$") or name:find("spruce_log$")) ~= nil
+end
+
+-- With leaves (true), it clears the tree's leaves too, in the same
+-- trip, so the saplings in them drop into the turtle (left to decay
+-- they fall out of reach, and they're gone in 5 minutes): at the top
+-- of the trunk, while it's up there, it sweeps the square round it
+-- (see sweepLeaves). Returns logs dug and the top log's height.
+local function fellFrom(trunkX, baseY, trunkZ, logName, leaves)
+  local dug = 0
+  local topY = baseY
+  local straight = growsStraight(logName)
+  local swept = false
+
+  -- the top of the trunk: clear the leaves from up here
+  local function atTop(x, y, z)
+    if swept or not leaves then
+      return
+    end
+    swept = true
+    sweepLeaves(trunkX, baseY, trunkZ, y)
+    travel.to(x, y, z) -- back to the top of the trunk, to come down it
+  end
+  local function reachable(x, y, z)
+    return dug < MAX_LOGS and y >= baseY and y <= baseY + 32
+      and math.abs(x - trunkX) <= MAX_REACH and math.abs(z - trunkZ) <= MAX_REACH
+  end
+  local visit
+
+  -- the log above / below / in front (facing f): dig it, go in, follow, come back
+  local function up(x, y, z)
+    local found, block = turtle.inspectUp()
+    if found and isLog(block.name) and reachable(x, y + 1, z) and turtle.digUp() then
+      dug = dug + 1
+      if move.up() then
+        visit()
+        moveDown()
+      end
+      return true
+    end
+    return false
+  end
+  local function down(x, y, z)
+    local found, block = turtle.inspectDown()
+    if found and isLog(block.name) and reachable(x, y - 1, z) and turtle.digDown() then
+      dug = dug + 1
+      if move.down() then
+        visit()
+        moveUp()
+      end
+      return true
+    end
+    return false
+  end
+  local function ahead(f, x, y, z)
+    turn.toFace(f)
+    local found, block = turtle.inspect()
+    if found and isLog(block.name) and reachable(x + STEP_X[f], y, z + STEP_Z[f]) and turtle.dig() then
+      dug = dug + 1
+      if move.forward() then
+        visit()
+        turn.toFace(f)
+        move.back()
+      end
+      return true
+    end
+    return false
+  end
+
+  visit = function()
+    local x, y, z = position.get()
+    topY = math.max(topY, y)
+    local any = up(x, y, z)
+    if not any and x == trunkX and z == trunkZ then
+      atTop(x, y, z) -- nothing more above: the top of the trunk
+    end
+    if straight then
+      down(x, y, z)
+      return -- (birch, spruce: no branches to look for)
+    end
+    for f = 0, 3 do
+      any = ahead(f, x, y, z) or any
+    end
+    any = down(x, y, z) or any
+    if any or y == baseY then
+      return
+    end
+    -- the end of a branch: round the corners, through the leaves
+    for f = 0, 3 do
+      local nx, nz = x + STEP_X[f], z + STEP_Z[f]
+      if reachable(nx, y, nz) then
+        turn.toFace(f)
+        local found, block = turtle.inspect()
+        if (not found or isLeaves(block.name)) and (not found or turtle.dig()) and move.forward() then
+          up(nx, y, nz)
+          ahead((f + 1) % 4, nx, y, nz)
+          ahead((f + 3) % 4, nx, y, nz)
+          down(nx, y, nz)
+          turn.toFace(f)
+          move.back()
+        end
+      end
+    end
+  end
+
+  visit()
+  return dug, topY
 end
 
 -- Fell the tree in front of us (its bottom log at x, y, z), and
@@ -488,11 +560,11 @@ end
 local function chop(x, y, z)
   local before = count(isLog)
   local _, _, _, facing = position.get()
+  local _, first = turtle.inspect()
   turtle.dig()
   worldmap.set(x, y, z, nil)
   if move.forward() then
-    fellFrom(x, y, z)
-    clearLeaves(x, y, z)
+    fellFrom(x, y, z, type(first) == "table" and first.name or nil, true)
     turn.toFace(facing)
     move.back()
   end
@@ -796,8 +868,7 @@ local function fell(t)
         sightings.gone(block, t.x, t.y, t.z)
         worldmap.set(t.x, t.y, t.z, nil)
         if move.forward() then
-          fellFrom(t.x, t.y, t.z)
-          clearLeaves(t.x, t.y, t.z)
+          fellFrom(t.x, t.y, t.z, block.name, true)
           turn.toFace(side)
           move.back()
         end
@@ -936,6 +1007,7 @@ function forester.work()
     return nil
   end
   lastRound = os.clock()
+  emptyThisRound = {} -- a new round: things may have grown since
   local house = findWarehouse()
   if not fuelUp(house) then
     goal = "nothing: needs fuel"
