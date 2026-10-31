@@ -36,6 +36,11 @@
 -- Every ore it finds, and every tree (marked at the bottom of its
 -- trunk), goes on the tracker's map of known blocks, where the
 -- Miner and the Forester look for them.
+--
+-- Finding ore is one part of its job; keeping an eye on the colony
+-- is another. Every SURVEY_EVERY it asks the tracker where to look
+-- (the tree farm, to start with), goes to each spot it's given,
+-- scans, and sends back what it saw there (see Survey.cs).
 -- ==================================================
 
 local position = require("position")
@@ -57,6 +62,8 @@ local EXPLORE_FILE = "explore.json"
 local DEEP_BELOW = 50       -- below this is where it would rather be
 local SURFACE_PENALTY = 2500 -- (squared blocks: as if 50 blocks further) for a spot above it
 local ASK_DEEP_EVERY = 600  -- seconds between asking the tracker for deep spots
+local SURVEY_EVERY = 30 * 60 -- seconds between looking over the places the tracker asks about
+local lastSurvey = nil
 
 local lastRound = nil
 local wants = nil -- coal it's asked the warehouse for, or nil
@@ -315,6 +322,60 @@ end
 -- Scan here if it's new or stale, then head for the nearest edge
 -- of the known world and scan there. Returns a sentence, or nil
 -- if it's resting (nowhere new to go).
+-- What a survey looks at: leaves, wood and saplings (the tree farm).
+local function surveyed(name)
+  return name:find("_leaves$") or name:find("_log$") or name:find("_wood$")
+    or name:find("_sapling$") or name:find("_propagule$")
+end
+
+-- Look over the places the tracker asks about: to each of a site's
+-- spots (never digging), scan, and send what's in its box. Returns
+-- a sentence, or nil if there's nowhere to look.
+local function survey()
+  local world = require("world").get() or ""
+  local sites = web.get("/surveys?world=" .. textutils.urlEncode(world))
+  if type(sites) ~= "table" or #sites == 0 then
+    return nil
+  end
+  local device = peripheral.find("geoScanner")
+  if not device then
+    return nil
+  end
+  local said = {}
+  for _, site in ipairs(sites) do
+    local box = type(site) == "table" and site.box
+    if type(site.name) == "string" and type(site.stands) == "table" and type(box) == "table" and #box == 6 then
+      local blocks, seen, scans = {}, {}, 0
+      for _, stand in ipairs(site.stands) do
+        local sx, sy, sz = stand[1], stand[2], stand[3]
+        if type(sx) == "number" and type(sy) == "number" and type(sz) == "number" then
+          web.setDoing(("Surveying the %s: going to %d %d %d"):format(site.name, sx, sy, sz))
+          if travel.to(sx, sy, sz) then
+            local ok, found = pcall(device.scan, RADIUS)
+            if ok and type(found) == "table" then
+              scans = scans + 1
+              for _, b in ipairs(found) do
+                if type(b) == "table" and type(b.name) == "string" and type(b.x) == "number" and surveyed(b.name) then
+                  local x, y, z = sx + b.x, sy + b.y, sz + b.z
+                  local k = x .. "," .. y .. "," .. z
+                  if not seen[k] and #blocks < 2500 and x >= box[1] and y >= box[2] and z >= box[3]
+                      and x <= box[4] and y <= box[5] and z <= box[6] then
+                    seen[k] = true
+                    table.insert(blocks, { x, y, z, b.name })
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+      web.post("/survey", { world = world, site = site.name, scans = scans, blocks = blocks })
+      table.insert(said, ("the %s (%d of %d spots scanned)"):format(site.name, scans, #site.stands))
+    end
+  end
+  return #said > 0 and ("Surveyed " .. table.concat(said, ", ")) or nil
+end
+
 function scanner.work()
   if lastRound and os.clock() - lastRound < REST then
     return nil
@@ -322,6 +383,15 @@ function scanner.work()
   local fuelled, why = fuelUp()
   if not fuelled then
     return "Waiting: " .. why
+  end
+
+  -- keeping an eye on the colony, every so often
+  if not lastSurvey or os.clock() - lastSurvey > SURVEY_EVERY then
+    lastSurvey = os.clock()
+    local done = survey()
+    if done then
+      return done
+    end
   end
 
   -- wherever it is: scan if it never has here, or not for a while
