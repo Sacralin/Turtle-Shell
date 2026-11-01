@@ -11,6 +11,16 @@
 -- notices by itself and asks.)
 -- ==================================================
 
+-- The work runs alongside this (BitDriven OS), remembering where it
+-- thinks it is: hold it still first, or it saves that straight back
+-- over what's forgotten here. Once it's finished any move it's in.
+local waited = 0
+while _G.EMPIRE_MOVING and waited < 10 do
+  sleep(0.2)
+  waited = waited + 0.2
+end
+_G.BITDRIVEN_HOLD_WORK = true
+
 require("position").forget()
 pcall(function() require("quarry").clearLost() end) -- a Miner stopped because it was lost can go again
 print("Forgotten where I am. Restarting to")

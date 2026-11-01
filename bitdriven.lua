@@ -11,7 +11,9 @@
 --     is started again if it stops
 --   - the Apps screen lists the rest to pick from, and a Shell
 -- Tab, or tapping the bar along the top, switches between them.
--- The work never stops for it: an app runs alongside.
+-- The work never stops for it: an app runs alongside. (A tool that
+-- changes what the work remembers, like setpos, sets
+-- _G.BITDRIVEN_HOLD_WORK to hold it still until it restarts.)
 --
 -- Apps only ever come in a release (startup.lua installs them):
 -- nothing here downloads anything, or runs anything not installed.
@@ -213,9 +215,9 @@ local width, height = parent.getSize()
 local tasks = {}
 local focus = 1
 
-local function addTask(name, fn)
+local function addTask(name, fn, work)
   local win = window.create(parent, 1, 2, width, height - 1, false)
-  table.insert(tasks, { name = name, win = win, term = win, co = coroutine.create(fn) })
+  table.insert(tasks, { name = name, win = win, term = win, co = coroutine.create(fn), work = work })
 end
 
 local function drawBar()
@@ -250,6 +252,9 @@ local function resume(t, event)
   if t.dead or (t.filter ~= nil and t.filter ~= event[1] and event[1] ~= "terminate") then
     return
   end
+  if t.work and _G.BITDRIVEN_HOLD_WORK then
+    return -- held still by a tool that changes what it remembers (setpos), till the restart
+  end
   term.redirect(t.term)
   local ok, filter = coroutine.resume(t.co, table.unpack(event, 1, event.n))
   t.term = term.current()
@@ -276,7 +281,7 @@ _G.BITDRIVEN = true -- (screen.lua leaves the title to the bar)
 local apps = loadApps()
 for _, app in ipairs(apps) do
   if app.autostart then
-    addTask(app.name, keepRunning(app))
+    addTask(app.name, keepRunning(app), true)
     break -- one: the device's work
   end
 end
