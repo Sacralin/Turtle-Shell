@@ -3,16 +3,18 @@
 --
 -- Runs every time the computer turns on. It:
 --   1. Installs the latest release, if there's a new one
---   2. Runs main.lua, and starts it again if it stops (a crash),
---      waiting a little longer each time so it can't go round
---      and round crashing
---   3. Keeps checking for new releases while main.lua runs,
---      and restarts to install one when it appears
+--   2. Runs BitDriven OS (bitdriven.lua: the apps, and the work),
+--      and starts it again if it stops (a crash), waiting a little
+--      longer each time so it can't go round and round crashing
+--   3. Keeps checking for new releases while it runs, and
+--      restarts to install one when it appears
 --
 -- It only ever downloads from the "release" branch on GitHub,
 -- so nothing reaches the server until you release it. The
 -- branch's release.txt names the release's exact commit, and every
--- file comes from that commit.
+-- file comes from that commit. A device only installs the files of
+-- the apps that run on it (apps.json): a pocket computer has no use
+-- for the mining.
 --
 -- To install on a new computer, run:
 --   wget https://raw.githubusercontent.com/Sacralin/Turtle-Shell/release/startup.lua startup.lua
@@ -82,6 +84,51 @@ local function versionNumber(text)
 end
 
 
+-- "turtle", "pocket" or "computer"
+local function deviceKind()
+  if turtle then
+    return "turtle"
+  elseif pocket then
+    return "pocket"
+  end
+  return "computer"
+end
+
+
+-- The files this device can leave out, from a release's apps.json:
+-- those of apps that don't run on it (unless one that does uses them
+-- too). No apps.json (an older release), or one that can't be read:
+-- everything goes on.
+local function notForMe(appsText)
+  local skip, keep = {}, {}
+  local ok, list = pcall(textutils.unserializeJSON, appsText or "")
+  if not ok or type(list) ~= "table" or type(list.apps) ~= "table" then
+    return skip
+  end
+  for _, app in ipairs(list.apps) do
+    if type(app) == "table" and type(app.files) == "table" then
+      local runsHere = type(app.on) ~= "table"
+      for _, kind in ipairs(type(app.on) == "table" and app.on or {}) do
+        if kind == deviceKind() then
+          runsHere = true
+        end
+      end
+      for _, fileName in ipairs(app.files) do
+        if runsHere then
+          keep[fileName] = true
+        else
+          skip[fileName] = true
+        end
+      end
+    end
+  end
+  for fileName in pairs(keep) do
+    skip[fileName] = nil
+  end
+  return skip
+end
+
+
 -- Install the release if we don't have exactly its commit.
 -- Returns true if something was installed.
 local function update()
@@ -103,16 +150,19 @@ local function update()
     return false
   end
 
-  -- Step 1: download every file in manifest.txt.
+  -- Step 1: download every file in manifest.txt this device needs.
   -- If any download fails, give up without changing anything.
+  local skip = fileList:find("apps.json", 1, true) and notForMe(download("apps.json", commit)) or {}
   local downloaded = {}
   for fileName in fileList:gmatch("%S+") do
-    local text = download(fileName, commit)
-    if text == nil then
-      print("Couldn't download " .. fileName .. ", will try again later")
-      return false
+    if not skip[fileName] then
+      local text = download(fileName, commit)
+      if text == nil then
+        print("Couldn't download " .. fileName .. ", will try again later")
+        return false
+      end
+      downloaded[fileName] = text
     end
-    downloaded[fileName] = text
   end
 
   -- Step 2: everything downloaded fine, so save it all. First make
@@ -145,10 +195,11 @@ local function update()
 end
 
 
--- Runs main.lua, and if it stops or crashes, starts it again:
--- after RESTART_FIRST seconds, doubling each time up to
--- RESTART_MOST, and back to the start once it's run for a while.
--- The update checker keeps running meanwhile, so a fix can arrive.
+-- Runs BitDriven OS (or main.lua, before there was one), and if it
+-- stops or crashes, starts it again: after RESTART_FIRST seconds,
+-- doubling each time up to RESTART_MOST, and back to the start once
+-- it's run for a while. The update checker keeps running meanwhile,
+-- so a fix can arrive.
 local RESTART_FIRST = 10
 local RESTART_MOST = 300
 local RAN_LONG_ENOUGH = 600
@@ -157,13 +208,14 @@ local function runMainProgram()
   local wait = RESTART_FIRST
   while true do
     local started = os.clock()
-    if fs.exists("main.lua") then
-      shell.run("main.lua")
+    local program = fs.exists("bitdriven.lua") and "bitdriven.lua" or "main.lua"
+    if fs.exists(program) then
+      shell.run(program)
     end
     if os.clock() - started > RAN_LONG_ENOUGH then
       wait = RESTART_FIRST
     end
-    print(("main.lua stopped. Starting it again in %d seconds."):format(wait))
+    print(("%s stopped. Starting it again in %d seconds."):format(program, wait))
     sleep(wait)
     wait = math.min(wait * 2, RESTART_MOST)
   end
@@ -198,5 +250,5 @@ if update() then
   os.reboot()
 end
 
--- run main.lua and the update checker at the same time
+-- run the OS and the update checker at the same time
 parallel.waitForAny(runMainProgram, keepCheckingForUpdates)

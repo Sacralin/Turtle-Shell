@@ -1,4 +1,6 @@
 startup.lua
+bitdriven.lua
+apps.json
 main.lua
 web.lua
 setweb.lua
@@ -32,3 +34,4 @@ locate.lua
 screen.lua
 equipment.lua
 setup.lua
+FindPlayer.lua

@@ -30,10 +30,13 @@ end
 
 
 -- Clear the screen and show the title and role at the top.
+-- (Under BitDriven OS the bar along the top has the title.)
 function screen.header(role)
   term.clear()
   term.setCursorPos(1, 1)
-  screen.printInColour("BitDriven OS v" .. readVersion(), colours.yellow)
+  if not _G.BITDRIVEN then
+    screen.printInColour("BitDriven OS v" .. readVersion(), colours.yellow)
+  end
   print("Role: " .. role)
   print("")
 end
