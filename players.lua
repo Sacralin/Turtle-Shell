@@ -9,14 +9,20 @@
 --   - you: where you are, so the 3D view can show you, and send a
 --     turtle to you (Come to me);
 --   - with Avoid players on, where everyone else is, with no names, so
---     the tracker can hold digging and building near them. Nothing
---     about anyone else is sent with it off.
+--     the tracker can hold digging and building near them;
+--   - while the 3D view's open ("all"): where everyone is, by name,
+--     reporting every LIVE_EVERY seconds so they move on the map.
+-- Nothing else about anyone else is sent.
 -- ==================================================
 
 local players = {}
 
 local owner = nil  -- your Minecraft name, from the tracker
 local avoid = false -- whether the tracker wants the others' positions
+local live = false -- whether the 3D view's open (everyone's positions wanted)
+
+local DETECTOR_EVERY = 10 -- seconds between reports, at most, with a detector (who's on)
+local LIVE_EVERY = 3      -- and while the 3D view's open
 
 local function detector()
   local ok, device = pcall(peripheral.find, "playerDetector")
@@ -30,6 +36,7 @@ function players.told(said)
   end
   owner = type(said.owner) == "string" and said.owner ~= "" and said.owner or nil
   avoid = said.avoid == true
+  live = said.all == true
 end
 
 -- Where a player is: { x, y, z, dimension }, or nil (offline, out of
@@ -74,6 +81,20 @@ function players.report()
   if avoid then
     out.others = others
   end
+  if live then
+    local everyone = {}
+    for _, name in ipairs(names) do
+      if #everyone >= 50 then
+        break
+      end
+      local spot = where(device, name) -- (nil: out of its range)
+      if spot then
+        spot.name = name
+        everyone[#everyone + 1] = spot
+      end
+    end
+    out.everyone = everyone
+  end
   return out
 end
 
@@ -84,12 +105,14 @@ function players.isChange(event)
 end
 
 -- Sleep till the next report's due: seconds, or sooner if someone
--- comes or goes (with a detector).
+-- comes or goes (with a detector, which reports more often anyway:
+-- every DETECTOR_EVERY, or LIVE_EVERY while the 3D view's open).
 function players.untilNextReport(seconds)
   if not detector() then
     sleep(seconds) -- (nobody's comings and goings to hear)
     return
   end
+  seconds = math.min(seconds, live and LIVE_EVERY or DETECTOR_EVERY)
   local timer = os.startTimer(seconds)
   while true do
     local event, id = os.pullEvent()
