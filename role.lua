@@ -18,8 +18,10 @@ local ROLE_FILE = "role.txt"
 --            loaded, so the empire keeps going while you're away.
 --   Miner:   goes on mining trips (mining.lua). Keeps its chunk
 --            loaded, since it works far from everyone.
---   Scanner: no pickaxe; flies about near home scanning for ores
---            with a Geo Scanner, for the Miner (scanner.lua).
+--   Explorer: no pickaxe; flies about near home mapping it, and
+--            finding ores for the Miner (scanner.lua). A Geo Scanner
+--            is optional: with one it scans, without it it looks
+--            round as it flies.
 --   Forester: grows and chops trees in a farm in front of its
 --            home: wood, renewable fuel (forester.lua).
 --   Gatherer: no pickaxe; stays at home and picks up items lying
@@ -39,7 +41,7 @@ role.EQUIPMENT = {
   Builder = { right = "Pickaxe", left = "Chunk loader" },
   Miner = { right = "Pickaxe", left = "Chunk loader" },
   Crafter = { right = "Pickaxe", left = "Chunk loader" },
-  Scanner = { right = "Geo scanner", left = "Chunk loader" },
+  Explorer = { left = "Chunk loader" },
   Forester = { right = "Axe", left = "Chunk loader" },
   Gatherer = { left = "Chunk loader" },
   Woodcutter = { right = "Axe", left = "Chunk loader" },
@@ -50,7 +52,13 @@ role.EQUIPMENT = {
 role.CARRY = {
   Crafter = { "Crafting table" },
 }
-role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer", "Woodcutter", "Chat" }
+
+-- Tools a role uses if it has them, by side: put on when they turn
+-- up in its inventory, but it doesn't wait for them.
+role.OPTIONAL = {
+  Explorer = { right = "Geo scanner" },
+}
+role.JOBS = { "Builder", "Miner", "Crafter", "Explorer", "Forester", "Gatherer", "Woodcutter", "Chat" }
 
 -- No job: a turtle with just BitDriven OS and its apps. Its work
 -- (the Colony app) doesn't start: autostart.txt says so to the OS.
@@ -99,6 +107,10 @@ function role.get()
   if name == "Queen" then
     return "Builder" -- what the Builder was called before release 33
   end
+  if name == "Scanner" then
+    role.set("Explorer") -- what the Explorer was called before (it needed a Geo Scanner then)
+    return "Explorer"
+  end
   return name
 end
 
@@ -110,6 +122,11 @@ end
 -- Tools this computer must carry: { "Crafting table" }
 function role.carried()
   return role.CARRY[role.get()] or {}
+end
+
+-- Tools it uses if it has them: { right = "Geo scanner" }
+function role.optional()
+  return role.OPTIONAL[role.get()] or {}
 end
 
 

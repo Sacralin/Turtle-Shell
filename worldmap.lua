@@ -11,11 +11,11 @@
 -- the reports, and with each route it asks for), which keeps one
 -- map for every turtle, on the PC, and plans their routes on it
 -- (WalkMap.cs). Except walls that are only walls to this turtle
--- (natural ground it has no tool to dig, like a Scanner): those
+-- (natural ground it has no tool to dig, like an Explorer): those
 -- stay here.
 --
 -- So nothing's kept on the turtle's disk (it's small, and a
--- Scanner once filled it with map): only the sections of
+-- Explorer once filled it with map): only the sections of
 -- 16x16x16 blocks near it, in memory, for finding its own way when
 -- the tracker can't be reached. The section used longest ago is
 -- forgotten when there are too many; it all went to the tracker.

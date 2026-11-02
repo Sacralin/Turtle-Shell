@@ -266,7 +266,7 @@ function web.status()
       report.wants = require("build").wants()
       report.placed = require("build").placed() -- so the plan counts down
       report.goal = require("build").goal()     -- building, or helping the Miner
-    elseif report.role == "Scanner" then
+    elseif report.role == "Explorer" then
       report.wants = require("scanner").wants() -- coal, when it's low
     elseif report.role == "Forester" then
       report.wants = require("forester").wants() -- coal, when it's low
@@ -298,7 +298,7 @@ function web.status()
     report.homeBlocked = require("travel").homeBlocked()
 
     -- what it's learnt about the way round (worldmap.lua)
-    local changes = require("worldmap").changes(1000) -- (a Scanner in a cave learns a lot at once)
+    local changes = require("worldmap").changes(1000) -- (an Explorer in a cave learns a lot at once)
     if #changes > 0 then
       report.map = changes
     end

@@ -33,7 +33,7 @@
 -- Short of saplings, it asks the warehouse for some (the Gatherer
 -- brings in the ones lying about), and picks them up from the out
 -- chest. If there are none there either, it goes to wild trees the
--- Scanner has found near home, fells them and clears their leaves
+-- Explorer has found near home, fells them and clears their leaves
 -- (which drop saplings), then plants its farm with those.
 --
 -- After every round, logs, sticks, apples, spare saplings and
@@ -834,7 +834,7 @@ end
 
 -- ================= wild trees =================
 
--- Wild trees near home the Scanner has found (the bottom log of
+-- Wild trees near home the Explorer has found (the bottom log of
 -- each), nearest first, leaving out the farm's own.
 function forester.wildTrees()
   local hx, hy, hz = position.home()

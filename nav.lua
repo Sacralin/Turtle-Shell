@@ -39,6 +39,10 @@ local TRIES = 30 -- how many times to retry a blocked move before giving up
 -- step.
 nav.keepGround = false
 
+-- Never dig, whatever it has on (an Explorer: it goes only where
+-- there's room). scanner.lua sets it.
+nav.noDig = false
+
 local function soft(block)
   local tags = type(block.tags) == "table" and block.tags or {}
   return tags["minecraft:replaceable"] or tags["minecraft:flowers"] or tags["minecraft:leaves"]
@@ -95,10 +99,10 @@ local function tryMove(moveFunction, dig, attack, inspect, target, side)
       return false, ("kept ground: %s at %d %d %d"):format(block.name, x, y, z)
     elseif terrain.isNatural(block) or worldmap.isClearable(x, y, z) then
       -- natural ground, or anything in the way in a build's area
-      if dig() then
+      if not nav.noDig and dig() then
         sightings.gone(block, x, y, z)
       else
-        -- can't dig it (no pickaxe, like a Scanner): go round (a
+        -- can't dig it (no pickaxe, like an Explorer): go round (a
         -- wall only to us: others can dig it, so not shared)
         worldmap.set(x, y, z, "wall", true)
         return false, ("can't dig %s at %d %d %d"):format(block.name, x, y, z)

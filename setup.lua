@@ -10,7 +10,8 @@
 --      looks like it's been picked up and moved.
 --   5. A full tank of fuel, and the tools my role needs (see
 --      role.lua): everyone needs a pickaxe and a chunk loader, and
---      a Crafter carries a crafting table too
+--      a Crafter carries a crafting table too. An Explorer's Geo
+--      Scanner is optional: put on if it's there, not waited for
 --
 -- A turtle that's already set up goes straight through.
 -- ==================================================
@@ -177,6 +178,16 @@ local function checkRequirements()
       table.insert(tools, { label = tool, done = equipment.hasOn(side, names) })
     end
   end
+  -- tools it uses if it has them (an Explorer's Geo Scanner): put on
+  -- if they've turned up, but never waited for
+  for side, tool in pairs(role.optional()) do
+    local names = equipment.TOOLS[tool]
+    if not equipment.hasOn(side, names) then
+      equipment.equipFromInventory(names, side)
+    end
+    local has = equipment.hasOn(side, names)
+    table.insert(tools, { label = tool, done = true, detail = has and "on" or "optional: none" })
+  end
 
   local fuel, limit = equipment.fuel()
   local fuelDetail = fuel .. "/" .. limit
@@ -187,7 +198,7 @@ local function checkRequirements()
   -- less); its job then keeps the tank full from the warehouse. A
   -- turtle that knows where it is and has the tracker needs only
   -- enough to get home and back: it may have been restarted far off
-  -- and low, like a Scanner deep in a cave, with no one to give it any
+  -- and low, like an Explorer deep in a cave, with no one to give it any
   local startAt = math.min(START_FUEL, equipment.fuelRule().below)
   local enough = fuel == "unlimited" or fuel >= limit * startAt / 100
   local hx, hy, hz = position.home()

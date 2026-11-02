@@ -562,7 +562,7 @@ function quarry.trip(atLevel)
 end
 
 -- ================= known coal =================
--- The Scanner puts ores it finds on the tracker's map. When
+-- The Explorer puts ores it finds on the tracker's map. When
 -- there's coal on it, the Miner digs straight to each block,
 -- nearest first, instead of tunnelling blind.
 
@@ -826,7 +826,7 @@ function quarry.work(now, deepslateOnly)
   local function label(item) return (item:gsub("^.*:", ""):gsub("^raw_", "")) end
 
   -- 1. coal first: it's everyone's fuel. 2. any other target that's
-  -- short and that the Scanner has found ore for. 3. the plan.
+  -- short and that the Explorer has found ore for. 3. the plan.
   local forCoal = not deepslateOnly and short("minecraft:coal")
   local hunt = nil -- { item, ores }
   local order = { "minecraft:coal" }
@@ -883,7 +883,7 @@ function quarry.work(now, deepslateOnly)
   tripStartFuel = coalTrip and turtle.getFuelLevel() or nil
   if hunt then
     local more
-    result, reason, more = huntOre(hunt.ores, label(hunt.item), quarry.oreOf(hunt.item), coalTrip) -- the Scanner found some: dig straight to it
+    result, reason, more = huntOre(hunt.ores, label(hunt.item), quarry.oreOf(hunt.item), coalTrip) -- the Explorer found some: dig straight to it
     if more then
       local tunnelled
       tunnelled, reason = quarry.trip(COAL_LEVEL) -- then tunnel for the rest of a stack

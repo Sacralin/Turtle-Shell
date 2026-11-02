@@ -1,19 +1,25 @@
 -- ==================================================
--- scanner.lua : the Scanner explores and finds ores for the Miner
+-- scanner.lua : the Explorer maps the world and finds ores for the Miner
 --
--- A Scanner has an Advanced Peripherals Geo Scanner and a chunk
--- loader, and no pickaxe: it never digs, so it only goes where
--- there's room (open air, caves, water).
+-- An Explorer has a chunk loader, and no pickaxe: it never digs, so
+-- it only goes where there's room (open air, caves, water). An
+-- Advanced Peripherals Geo Scanner (on its right) is optional: with
+-- one it scans, as below; without one it looks round as it flies
+-- (see "exploring without a Geo Scanner", further down).
 --
--- It explores: every scan (everything within RADIUS blocks) tells
--- it which blocks round it are solid, so the rest is open. It
--- keeps a map of the world in 15 block cubes (explore.json):
--- which it has scanned and when, and for cubes it has seen into
--- but not scanned, a spot in them it could stand on (open, with a
--- floor under it: the ground, or a cave floor). Then it heads for
--- the nearest such spot within RANGE blocks of home, at any
--- height, flying through open space. If it can't get there, that
--- cube is marked unreachable. So it pushes the edge of the world
+-- How far it goes comes from the tracker (GET /explore): a radius
+-- round home, and heights, if they're set. Without an answer, RANGE
+-- round home, at any height.
+--
+-- With a Geo Scanner it explores: every scan (everything within
+-- RADIUS blocks) tells it which blocks round it are solid, so the
+-- rest is open. It keeps a map of the world in 15 block cubes
+-- (explore.json): which it has scanned and when, and for cubes it
+-- has seen into but not scanned, a spot in them it could stand on
+-- (open, with a floor under it: the ground, or a cave floor). Then
+-- it heads for the nearest such spot within its limits, flying
+-- through open space. If it can't get there, that cube is marked
+-- unreachable. So it pushes the edge of the world
 -- it knows outwards, through caves too, instead of flying a grid.
 --
 -- Its job is to keep the map of its zone as up to date as it can:
@@ -22,7 +28,7 @@
 -- explore, it goes back to the cube scanned longest ago.
 --
 -- What it sees open underground (caves) goes on the map every
--- turtle finds its way by, so routes (and the Scanner itself) can
+-- turtle finds its way by, so routes (and the Explorer itself) can
 -- use the caves.
 --
 -- Underground is where the ore is, but from the surface a scan
@@ -63,6 +69,7 @@ local DEEP_BELOW = 50       -- below this is where it would rather be
 local SURFACE_PENALTY = 2500 -- (squared blocks: as if 50 blocks further) for a spot above it
 local ASK_DEEP_EVERY = 600  -- seconds between asking the tracker for deep spots
 local SURVEY_EVERY = 30 * 60 -- seconds between looking over the places the tracker asks about
+local LIMITS_EVERY = 60     -- seconds between asking the tracker for its limits
 local lastSurvey = nil
 
 local lastRound = nil
@@ -80,6 +87,60 @@ local function fuelUp()
   local ok, why = equipment.topUp(house) -- (keeps the tank full: see equipment.lua)
   wants = equipment.fuelWanted()
   return ok, why
+end
+
+
+-- ================= its limits =================
+-- From the tracker (GET /explore, set there): { radius, minY, maxY },
+-- the heights nil for none. Asked at most once a minute and kept;
+-- with no answer it keeps what it had, or RANGE round home at any
+-- height. An answer that makes no sense counts as none set.
+
+local limits, limitsAt = nil, nil
+
+local function defaults()
+  return { radius = scanner.RANGE }
+end
+
+-- The tracker's answer, if it makes sense; or nil.
+local function sensible(got)
+  if type(got) ~= "table" then
+    return nil
+  end
+  local radius, minY, maxY = got.radius, got.minY, got.maxY
+  if type(radius) ~= "number" or radius < 8 or radius > 2000 then
+    return nil
+  end
+  if minY == nil and maxY == nil then
+    return { radius = math.floor(radius) }
+  end
+  if type(minY) ~= "number" or type(maxY) ~= "number" or minY < -64 or maxY > 320 or minY > maxY then
+    return nil
+  end
+  return { radius = math.floor(radius), minY = math.floor(minY), maxY = math.floor(maxY) }
+end
+
+-- Its limits, asking the tracker if it's been a minute.
+function scanner.limits()
+  if not limits or os.clock() - limitsAt >= LIMITS_EVERY then
+    limitsAt = os.clock()
+    local got, _, answered = web.get(("/explore?world=%s&id=%d"):format(
+      textutils.urlEncode(require("world").get() or ""), os.getComputerID()))
+    if type(got) == "table" or answered then
+      limits = sensible(got) or defaults() -- (it answered: no limits, or nonsense)
+    else
+      limits = limits or defaults() -- (no answer: what it had)
+    end
+  end
+  return limits
+end
+
+-- Is x, y, z within its limits?
+local function inZone(x, y, z)
+  local zone = limits or defaults()
+  local hx, _, hz = position.home()
+  return math.abs(x - hx) <= zone.radius and math.abs(z - hz) <= zone.radius
+    and (not zone.minY or y >= zone.minY) and (not zone.maxY or y <= zone.maxY)
 end
 
 
@@ -188,15 +249,13 @@ local function spotOf(c)
 end
 
 -- The cube scanned longest ago (and more than RESCAN_AFTER ago)
--- within RANGE of home: { key, x, y, z }, or nil.
+-- within its limits: { key, x, y, z }, or nil.
 local function stalest()
-  local hx, _, hz = position.home()
   local now = os.epoch("utc")
   local oldest, oldestTime = nil, now - RESCAN_AFTER
   for key, c in pairs(loadMap()) do
     local sx, sy, sz = spotOf(c)
-    if c.t and not c.u and sx and c.t < oldestTime
-        and math.abs(sx - hx) <= scanner.RANGE and math.abs(sz - hz) <= scanner.RANGE then
+    if c.t and not c.u and sx and c.t < oldestTime and inZone(sx, sy, sz) then
       oldest, oldestTime = { key = key, x = sx, y = sy, z = sz }, c.t
     end
   end
@@ -204,16 +263,15 @@ local function stalest()
 end
 
 -- The nearest cube it has seen into but not scanned, that it
--- hasn't found unreachable, within RANGE of home: { key, x, y, z }.
+-- hasn't found unreachable, within its limits: { key, x, y, z }.
 local function nextFrontier()
-  local hx, _, hz = position.home()
   local x, y, z = position.get()
   local nearest, nearestDistance = nil, math.huge
   for key, c in pairs(loadMap()) do
     if not c.t and not c.u and type(c.spot) == "string" then
       local sx, sy, sz = c.spot:match("^(-?%d+),(-?%d+),(-?%d+)$")
       sx, sy, sz = tonumber(sx), tonumber(sy), tonumber(sz)
-      if sx and math.abs(sx - hx) <= scanner.RANGE and math.abs(sz - hz) <= scanner.RANGE then
+      if sx and inZone(sx, sy, sz) then
         local distance = (sx - x) ^ 2 + (sy - y) ^ 2 + (sz - z) ^ 2
         if sy >= DEEP_BELOW then
           distance = distance + SURFACE_PENALTY -- it would rather go deep
@@ -237,7 +295,7 @@ local function learnDeep()
   lastAskedDeep = os.clock()
   local hx, _, hz = position.home()
   local spots = web.get(("/open?world=%s&x=%d&z=%d&below=%d&range=%d&max=64"):format(
-    textutils.urlEncode(require("world").get() or ""), hx, hz, DEEP_BELOW, scanner.RANGE))
+    textutils.urlEncode(require("world").get() or ""), hx, hz, DEEP_BELOW, (limits or defaults()).radius))
   if type(spots) ~= "table" then
     return
   end
@@ -406,13 +464,150 @@ local function survey()
   return #said > 0 and ("Surveyed " .. table.concat(said, ", ")) or nil
 end
 
+-- ================= exploring without a Geo Scanner =================
+-- Without a scanner it only sees the blocks next to it: in front,
+-- above and below after every move (move.lua), and all round at each
+-- cube it stops in. So it goes cube to cube through open space,
+-- nearest first (deep down for preference), as with a scanner. At
+-- each stop it drops to the floor (at most a cube's height: it's the
+-- ground and the caves worth mapping, not the sky), looks round,
+-- marks the cube visited (as a scan would) and offers the cubes next
+-- to it as places to go: the four round it at its height, the one
+-- below if it's open below, and the one above only underground. A
+-- cube on the surface it can't get to is likely in a hill, so then
+-- the cube above it is offered: it climbs over.
+
+local SAW = "Exploring (no Geo Scanner: looking as it flies)"
+
+-- Note what's all round it, above and below (air for nothing).
+-- Returns whether it's open above, and below.
+local function lookRound()
+  local turn = require("turn")
+  for _ = 1, 4 do
+    local found, block = turtle.inspect()
+    local fx, fy, fz = position.inFront()
+    sightings.saw(found and block or nil, fx, fy, fz)
+    turn.right()
+  end
+  local x, y, z = position.get()
+  local foundUp, up = turtle.inspectUp()
+  sightings.saw(foundUp and up or nil, x, y + 1, z)
+  local foundDown, down = turtle.inspectDown()
+  sightings.saw(foundDown and down or nil, x, y - 1, z)
+  return not foundUp, not foundDown
+end
+
+-- Down to the floor, never more than a cube's height, nor below its limits.
+local function settle()
+  local move = require("move")
+  local zone = limits or defaults()
+  for _ = 1, CUBE - 1 do
+    local _, y = position.get()
+    if (zone.minY and y - 1 < zone.minY) or turtle.detectDown() or not move.down() then
+      return
+    end
+  end
+end
+
+-- A place to go in the cube x, y, z is in, if it's within its limits
+-- and the cube's new to it.
+local function offer(x, y, z)
+  local c = loadMap()[cubeOf(x, y, z)]
+  if inZone(x, y, z) and not (c and (c.t or c.u or c.spot)) then
+    cube(cubeOf(x, y, z)).spot = x .. "," .. y .. "," .. z
+  end
+end
+
+-- Visited (and where it's settled): look round, mark it, and offer
+-- the cubes next to it. target: the cube it went for, if any.
+local function visit(target)
+  settle()
+  local openUp, openDown = lookRound()
+  local x, y, z = position.get()
+  if target and target.key ~= cubeOf(x, y, z) then
+    scanned(target.key) -- (it dropped into the cube below)
+  end
+  scanned(cubeOf(x, y, z), x, y, z)
+  local cx, cy, cz = math.floor(x / CUBE), math.floor(y / CUBE), math.floor(z / CUBE)
+  for _, side in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+    offer((cx + side[1]) * CUBE + MIDDLE, y, (cz + side[2]) * CUBE + MIDDLE)
+  end
+  if openDown then
+    offer(x, (cy - 1) * CUBE + MIDDLE, z)
+  end
+  if openUp and y < DEEP_BELOW then
+    offer(x, (cy + 1) * CUBE + MIDDLE, z)
+  end
+  saveMap()
+  return x, y, z
+end
+
+-- "cube 12 of 40": cubes visited, of those it knows of, within its limits.
+local function progress()
+  local visited, known = 0, 0
+  for _, c in pairs(loadMap()) do
+    local sx, sy, sz = spotOf(c)
+    if sx and inZone(sx, sy, sz) and (c.t or not c.u) then
+      known = known + 1
+      if c.t then
+        visited = visited + 1
+      end
+    end
+  end
+  return ("cube %d of %d"):format(visited, known)
+end
+
+local function zoneSentence()
+  local zone = limits or defaults()
+  local heights = zone.minY and (", heights %d to %d"):format(zone.minY, zone.maxY) or ""
+  return ("Its whole zone (%d blocks round home%s) is explored and up to date"):format(zone.radius, heights)
+end
+
+-- Explore without a scanner: a sentence, and its state.
+local function explore()
+  local x, y, z = position.get()
+  local here = loadMap()[cubeOf(x, y, z)]
+  if inZone(x, y, z) and (not here or not here.t or os.epoch("utc") - here.t > RESCAN_AFTER) then
+    x, y, z = visit(nil)
+    return ("%s: %s, looked round %d %d %d"):format(SAW, progress(), x, y, z), "working"
+  end
+  learnDeep()
+  local target, doing = nextFrontier(), SAW
+  if not target then
+    target, doing = stalest(), "Refreshing the map (no Geo Scanner: looking as it flies)"
+  end
+  if not target then
+    lastRound = os.clock()
+    return zoneSentence(), "idle"
+  end
+  web.setDoing(("%s: %s, heading for %d %d %d"):format(doing, progress(), target.x, target.y, target.z), "working")
+  local ok, travelWhy = travel.to(target.x, target.y, target.z)
+  if not ok then
+    cube(target.key).u = true -- no way there it could find (it never digs)
+    if target.y >= DEEP_BELOW then
+      offer(target.x, target.y + CUBE, target.z) -- likely a hill: over the top
+    end
+    saveMap()
+    return ("Couldn't find a way to %d %d %d (%s): trying elsewhere"):format(target.x, target.y, target.z, tostring(travelWhy)), "working"
+  end
+  x, y, z = visit(target)
+  return ("%s: %s, looked round %d %d %d"):format(doing, progress(), x, y, z), "working"
+end
+
+
 function scanner.work()
   if lastRound and os.clock() - lastRound < REST then
     return nil
   end
+  scanner.limits()
+  require("nav").noDig = true -- (it has no pickaxe: never dig, whatever it has on)
   local fuelled, why = fuelUp()
   if not fuelled then
     return "Waiting: " .. why, "waiting", "no_fuel"
+  end
+
+  if not peripheral.find("geoScanner") then
+    return explore()
   end
 
   -- keeping an eye on the colony, every so often
@@ -429,7 +624,7 @@ function scanner.work()
   local here = loadMap()[cubeOf(x, y, z)]
   local last = here and math.max(here.t or 0, here.g or 0) -- scanned, or at least had a look from here
   if last == 0 then last = nil end
-  if not last or os.epoch("utc") - last > RESCAN_AFTER then
+  if inZone(x, y, z) and (not last or os.epoch("utc") - last > RESCAN_AFTER) then
     local ores, scanWhy = scanHere()
     if not ores then
       return "Scanning: " .. scanWhy, scanWhy:find("Geo Scanner") and "needs_you" or "blocked"
@@ -457,7 +652,7 @@ function scanner.work()
   end
   if not target then
     lastRound = os.clock()
-    return ("Its whole zone (%d blocks round home) is explored and up to date"):format(scanner.RANGE), "idle"
+    return zoneSentence(), "idle"
   end
   web.setDoing(("%s: heading for %d %d %d"):format(doing, target.x, target.y, target.z))
   local ok, travelWhy = travel.to(target.x, target.y, target.z)

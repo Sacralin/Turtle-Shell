@@ -214,6 +214,7 @@ for _, job in ipairs(role.JOBS) do
   COMMANDS["job" .. job] = function() changeJob(job) end
 end
 COMMANDS.jobNone = function() changeJob(role.NONE) end
+COMMANDS.jobScanner = COMMANDS.jobExplorer -- (what the Explorer was called before)
 
 
 -- Remember what's around us while we wait, so if we're picked
@@ -245,7 +246,7 @@ local function idleWork()
     if not result then
       result, state, reason = require("quarry").work()
     end
-  elseif role.get() == "Scanner" then
+  elseif role.get() == "Explorer" then
     result, state, reason = require("scanner").work()
   elseif role.get() == "Forester" then
     result, state, reason = require("forester").work()

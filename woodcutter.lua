@@ -2,7 +2,7 @@
 -- woodcutter.lua : the Woodcutter fells wild trees for wood
 --
 -- How a colony starting out gets its first wood: there's no tree
--- farm yet, and no Scanner to have found trees. It fells the wild
+-- farm yet, and no Explorer to have found trees. It fells the wild
 -- trees near home (the ones the tracker knows of first, else it looks
 -- round for one itself), leaves and all, so the saplings drop into it
 -- (forester.lua's felling), until it's carrying WANT_LOGS logs. Then
