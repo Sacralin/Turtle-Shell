@@ -22,6 +22,13 @@
 -- unreachable. So it pushes the edge of the world
 -- it knows outwards, through caves too, instead of flying a grid.
 --
+-- Explorers work together (the tracker's ExploreShare.cs): every
+-- SHARE_EVERY it tells the tracker the cubes it's finished, and hears
+-- the ones every Explorer has, and takes them as done; and before it
+-- sets off for a cube it claims it, so two never head for the same one
+-- (one another Explorer's claimed, it leaves). With no tracker, it
+-- carries on by itself.
+--
 -- Its job is to keep the map of its zone as up to date as it can:
 -- wherever it finds itself, if it hasn't scanned that cube for
 -- RESCAN_AFTER, it scans it again; and with nowhere new left to
@@ -70,6 +77,8 @@ local SURFACE_RINGS = 3     -- (rings of cubes from home: about 45 blocks furthe
 local ASK_DEEP_EVERY = 600  -- seconds between asking the tracker for deep spots
 local SURVEY_EVERY = 30 * 60 -- seconds between looking over the places the tracker asks about
 local LIMITS_EVERY = 60     -- seconds between asking the tracker for its limits
+local SHARE_EVERY = 30      -- seconds between swapping finished cubes with the tracker
+local CLAIM_TRIES = 6       -- cubes it tries to claim before going anyway
 local lastSurvey = nil
 
 local lastRound = nil
@@ -233,8 +242,77 @@ local function learn(found, x, y, z)
 end
 
 -- A cube has been scanned (from its spot, or from where it stood).
+-- ---- working together (see the top) ----
+local shared = { at = nil, claimed = {} } -- when last swapped; cubes others have claimed
+local finished = nil                      -- cubes done, to tell the tracker (nil: not started)
+local SEND_AT_ONCE = 400                  -- of them in one go, at most
+
+-- Swap with the tracker (and claim a cube, if given). Returns the
+-- tracker's answer, or nil if it didn't answer.
+local function share(claim)
+  local hx, _, hz = position.home()
+  if not finished then
+    -- just started: everything it's done before, so the others know too
+    finished = {}
+    for key, c in pairs(loadMap()) do
+      if c.t and not c.u then
+        finished[key] = true
+      end
+    end
+  end
+  local list = {}
+  for key in pairs(finished) do
+    if #list >= SEND_AT_ONCE then
+      break -- (the rest next time)
+    end
+    list[#list + 1] = key
+  end
+  local got = web.post("/explore/share", {
+    world = require("world").get() or "", id = os.getComputerID(),
+    x = hx or 0, z = hz or 0, range = (limits or defaults()).radius,
+    done = #list > 0 and list or textutils.empty_json_array, claim = claim,
+  })
+  if type(got) ~= "table" then
+    return nil
+  end
+  for _, key in ipairs(list) do
+    finished[key] = nil -- (the tracker has them)
+  end
+  shared.at = os.clock()
+  local map, changed = loadMap(), false
+  for key, when in pairs(type(got.scanned) == "table" and got.scanned or {}) do
+    if type(key) == "string" and type(when) == "number" and key:match("^%-?%d+,%-?%d+,%-?%d+$") then
+      local c = map[key]
+      if not c or not c.t or c.t < when then
+        map[key] = c or {}
+        map[key].t = when -- (another Explorer's done it: done)
+        changed = true
+      end
+    end
+  end
+  if changed then
+    saveMap()
+  end
+  shared.claimed = {}
+  for _, key in ipairs(type(got.claimed) == "table" and got.claimed or {}) do
+    if type(key) == "string" then
+      shared.claimed[key] = true
+    end
+  end
+  return got
+end
+
+local function shareNow()
+  if not shared.at or os.clock() - shared.at >= SHARE_EVERY then
+    share()
+  end
+end
+
 local function scanned(key, x, y, z)
   local c = cube(key)
+  if finished then
+    finished[key] = true -- (told to the tracker next time; not started: it's sent all then)
+  end
   c.t = os.epoch("utc")
   if x then
     c.spot = x .. "," .. y .. "," .. z -- it stood here: it can come back
@@ -255,7 +333,7 @@ local function stalest()
   local oldest, oldestTime = nil, now - RESCAN_AFTER
   for key, c in pairs(loadMap()) do
     local sx, sy, sz = spotOf(c)
-    if c.t and not c.u and sx and c.t < oldestTime and inZone(sx, sy, sz) then
+    if c.t and not c.u and sx and c.t < oldestTime and inZone(sx, sy, sz) and not shared.claimed[key] then
       oldest, oldestTime = { key = key, x = sx, y = sy, z = sz }, c.t
     end
   end
@@ -274,7 +352,7 @@ local function nextFrontier()
   local hx, _, hz = position.home()
   local best, bestRing, bestDistance = nil, math.huge, math.huge
   for key, c in pairs(loadMap()) do
-    if not c.t and not c.u and type(c.spot) == "string" then
+    if not c.t and not c.u and type(c.spot) == "string" and not shared.claimed[key] then
       local sx, sy, sz = c.spot:match("^(-?%d+),(-?%d+),(-?%d+)$")
       sx, sy, sz = tonumber(sx), tonumber(sy), tonumber(sz)
       if sx and inZone(sx, sy, sz) then
@@ -658,9 +736,26 @@ function scanner.work()
   -- down for preference); with none left, the part of its zone
   -- scanned longest ago
   learnDeep()
-  local target, doing = nextFrontier(), "Exploring"
-  if not target then
-    target, doing = stalest(), "Refreshing the map"
+  shareNow()
+  local target, doing
+  local taken = 0
+  for _ = 1, CLAIM_TRIES do
+    target, doing = nextFrontier(), "Exploring"
+    if not target then
+      target, doing = stalest(), "Refreshing the map"
+    end
+    -- claim it: another Explorer heading there already, pick again
+    local got = target and share(target.key)
+    if not (got and got.claimOk == false) then
+      break
+    end
+    shared.claimed[target.key] = true
+    target = nil
+    taken = taken + 1
+  end
+  if not target and taken > 0 then
+    lastRound = os.clock() -- (a rest, then it looks again)
+    return "Waiting: the other Explorers have the places near me", "waiting"
   end
   if not target then
     lastRound = os.clock()
