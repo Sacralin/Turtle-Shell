@@ -17,8 +17,8 @@
 -- (explore.json): which it has scanned and when, and for cubes it
 -- has seen into but not scanned, a spot in them it could stand on
 -- (open, with a floor under it: the ground, or a cave floor). Then
--- it heads for the nearest such spot within its limits, flying
--- through open space. If it can't get there, that cube is marked
+-- it heads for such a spot within its limits, nearest home first
+-- (ring by ring outwards, like the sweep), flying through open space. If it can't get there, that cube is marked
 -- unreachable. So it pushes the edge of the world
 -- it knows outwards, through caves too, instead of flying a grid.
 --
@@ -37,7 +37,7 @@
 -- shafts and tunnels, caves they've crossed: the map every turtle
 -- adds to) and adds those as places to go; and it would rather go
 -- deep than along the surface (a spot above DEEP_BELOW counts as
--- SURFACE_PENALTY further away).
+-- SURFACE_RINGS further from home).
 --
 -- Every ore it finds, and every tree (marked at the bottom of its
 -- trunk), goes on the tracker's map of known blocks, where the
@@ -66,7 +66,7 @@ local REST = 60        -- seconds to wait when the whole zone is explored and fr
 local RESCAN_AFTER = 30 * 60 * 1000 -- milliseconds before a cube it's in gets scanned again
 local EXPLORE_FILE = "explore.json"
 local DEEP_BELOW = 50       -- below this is where it would rather be
-local SURFACE_PENALTY = 2500 -- (squared blocks: as if 50 blocks further) for a spot above it
+local SURFACE_RINGS = 3     -- (rings of cubes from home: about 45 blocks further) for a spot above it
 local ASK_DEEP_EVERY = 600  -- seconds between asking the tracker for deep spots
 local SURVEY_EVERY = 30 * 60 -- seconds between looking over the places the tracker asks about
 local LIMITS_EVERY = 60     -- seconds between asking the tracker for its limits
@@ -262,27 +262,34 @@ local function stalest()
   return oldest
 end
 
--- The nearest cube it has seen into but not scanned, that it
--- hasn't found unreachable, within its limits: { key, x, y, z }.
+-- The next cube to scan: one it has seen into but not scanned, that
+-- it hasn't found unreachable, within its limits: { key, x, y, z }.
+-- Nearest home first, ring by ring (a ring a cube wide, sideways, like
+-- the sweep without a scanner), so it works outwards from home instead
+-- of following one way out to the edge; in a ring, the one nearest it.
+-- A spot above DEEP_BELOW counts as SURFACE_RINGS rings further out
+-- (it would rather go deep).
 local function nextFrontier()
   local x, y, z = position.get()
-  local nearest, nearestDistance = nil, math.huge
+  local hx, _, hz = position.home()
+  local best, bestRing, bestDistance = nil, math.huge, math.huge
   for key, c in pairs(loadMap()) do
     if not c.t and not c.u and type(c.spot) == "string" then
       local sx, sy, sz = c.spot:match("^(-?%d+),(-?%d+),(-?%d+)$")
       sx, sy, sz = tonumber(sx), tonumber(sy), tonumber(sz)
       if sx and inZone(sx, sy, sz) then
-        local distance = (sx - x) ^ 2 + (sy - y) ^ 2 + (sz - z) ^ 2
+        local ring = math.floor(math.max(math.abs(sx - hx), math.abs(sz - hz)) / CUBE)
         if sy >= DEEP_BELOW then
-          distance = distance + SURFACE_PENALTY -- it would rather go deep
+          ring = ring + SURFACE_RINGS
         end
-        if distance < nearestDistance then
-          nearest, nearestDistance = { key = key, x = sx, y = sy, z = sz }, distance
+        local distance = (sx - x) ^ 2 + (sy - y) ^ 2 + (sz - z) ^ 2
+        if ring < bestRing or (ring == bestRing and distance < bestDistance) then
+          best, bestRing, bestDistance = { key = key, x = sx, y = sy, z = sz }, ring, distance
         end
       end
     end
   end
-  return nearest
+  return best
 end
 
 -- Places deep down other turtles have been (the tracker's map):
