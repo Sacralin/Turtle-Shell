@@ -19,8 +19,10 @@ local screen = require("screen")
 
 local REPORT_EVERY = 30 -- seconds between reports
 
-web.setDoing("No job: just the apps")
 while true do
+  -- (Set position, in another app, may have changed these meanwhile)
+  require("position").reload()
+  web.setDoing("No job: just the apps")
   local status
   if not web.isSetUp() then
     status = "not set up (run setweb)"

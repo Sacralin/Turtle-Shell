@@ -147,6 +147,12 @@ local function finishInterruptedMove()
 end
 
 
+-- Read the saved position again: another app (Set position) may have
+-- changed it since this one started.
+function position.reload()
+  load()
+end
+
 -- ================= info =================
 
 -- Returns x, y, z, facing.
