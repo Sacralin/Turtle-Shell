@@ -287,6 +287,19 @@ function locate.run()
         write("Is this my new home? (y/n): ")
         newHome = read():lower():sub(1, 1) == "y"
       end
+      -- and which dimension (a map of its own for each)
+      local world = require("world")
+      local was = world.dimension()
+      screen.header(role.get())
+      print(("Got it: %d %d %d facing %s."):format(x, y, z, position.FACINGS[facing]))
+      print("")
+      print("Which dimension am I in?")
+      print(" 1. Overworld   2. Nether   3. End")
+      write(("(Enter: %s): "):format(was))
+      local pick = tonumber((read() or ""):match("^%s*([123])%s*$"))
+      if pick then
+        world.setDimension(world.DIMENSIONS[pick])
+      end
       if newHome then
         position.set(x, y, z, facing)
       else

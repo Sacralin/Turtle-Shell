@@ -7,11 +7,21 @@
 -- reports. The tracker files turtles under world and id.
 --
 -- Saved in world.txt.
+--
+-- And which dimension it's in (Set position asks; dimension.txt,
+-- none for the Overworld): the Nether and the End are worlds of their
+-- own to the tracker ("Kaz Server - Nether"), with their own map,
+-- jobs and warehouse, so nothing from one lands on another's map.
 -- ==================================================
 
 local world = {}
 
 local WORLD_FILE = "world.txt"
+local DIMENSION_FILE = "dimension.txt"
+
+-- the dimensions, and what each adds to the world's name
+world.DIMENSIONS = { "overworld", "nether", "end" }
+local SUFFIX = { overworld = "", nether = " - Nether", ["end"] = " - End" }
 
 
 -- names Windows keeps for itself, so the tracker can't use them as folders
@@ -34,8 +44,29 @@ function world.isSet()
   return world.get() ~= nil
 end
 
--- This world's name, or nil if we haven't been told.
-function world.get()
+-- Which dimension it's in: "overworld", "nether" or "end".
+function world.dimension()
+  if not fs.exists(DIMENSION_FILE) then
+    return "overworld"
+  end
+  local file = fs.open(DIMENSION_FILE, "r")
+  local name = file.readAll():gsub("%s+", "")
+  file.close()
+  return SUFFIX[name] and name or "overworld"
+end
+
+function world.setDimension(name)
+  if name == "overworld" or not SUFFIX[name] then
+    fs.delete(DIMENSION_FILE)
+    return
+  end
+  local file = fs.open(DIMENSION_FILE, "w")
+  file.write(name)
+  file.close()
+end
+
+-- The world's name, as you gave it (world.txt), or nil.
+function world.base()
   if not fs.exists(WORLD_FILE) then
     return nil
   end
@@ -46,6 +77,18 @@ function world.get()
     return name
   end
   return nil
+end
+
+-- The world's name for the tracker: with its dimension, if it's not
+-- the Overworld ("Kaz Server - Nether"; shortened to fit 32). Nil if
+-- we haven't been told.
+function world.get()
+  local name = world.base()
+  if not name then
+    return nil
+  end
+  local suffix = SUFFIX[world.dimension()]
+  return name:sub(1, 32 - #suffix) .. suffix
 end
 
 function world.set(name)

@@ -44,6 +44,10 @@ local function lines()
     add("Job", trim(readFile("role.txt")))
   end
   add("World", trim(readFile("world.txt")))
+  if turtle then
+    local dimension = trim(readFile("dimension.txt"))
+    add("Dimension", dimension ~= "" and dimension or "overworld")
+  end
   add("Doing", _G.EMPIRE_DOING)
   if _G.EMPIRE_PAUSED then
     add("Work", "paused (Pause work to carry on)")

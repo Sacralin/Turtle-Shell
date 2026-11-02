@@ -127,6 +127,7 @@ end
 local function worldSetting()
   heading("World")
   print("Now: " .. tostring(world.isSet() and world.get() or "not set"))
+  print("(The dimension: Set position asks.)")
   print("New world name (Enter: leave it)")
   local name = read():gsub("^%s+", ""):gsub("%s+$", "")
   if name == "" then
