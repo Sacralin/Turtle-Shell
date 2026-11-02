@@ -412,7 +412,7 @@ function scanner.work()
   end
   local fuelled, why = fuelUp()
   if not fuelled then
-    return "Waiting: " .. why
+    return "Waiting: " .. why, "waiting", "no_fuel"
   end
 
   -- keeping an eye on the colony, every so often
@@ -432,7 +432,7 @@ function scanner.work()
   if not last or os.epoch("utc") - last > RESCAN_AFTER then
     local ores, scanWhy = scanHere()
     if not ores then
-      return "Scanning: " .. scanWhy
+      return "Scanning: " .. scanWhy, scanWhy:find("Geo Scanner") and "needs_you" or "blocked"
     end
     -- done here if it was near the middle; if not, this cube now has
     -- a spot nearer its middle, and exploring comes back to it
@@ -457,19 +457,19 @@ function scanner.work()
   end
   if not target then
     lastRound = os.clock()
-    return ("Its whole zone (%d blocks round home) is explored and up to date"):format(scanner.RANGE)
+    return ("Its whole zone (%d blocks round home) is explored and up to date"):format(scanner.RANGE), "idle"
   end
   web.setDoing(("%s: heading for %d %d %d"):format(doing, target.x, target.y, target.z))
   local ok, travelWhy = travel.to(target.x, target.y, target.z)
   if not ok then
     cube(target.key).u = true -- no way there it could find (it never digs)
     saveMap()
-    return ("Couldn't find a way to %d %d %d (%s): trying elsewhere"):format(target.x, target.y, target.z, tostring(travelWhy))
+    return ("Couldn't find a way to %d %d %d (%s): trying elsewhere"):format(target.x, target.y, target.z, tostring(travelWhy)), "working"
   end
   local before = cube(target.key).spot
   local ores, scanWhy = scanHere()
   if not ores then
-    return "Scanning: " .. scanWhy
+    return "Scanning: " .. scanWhy, scanWhy:find("Geo Scanner") and "needs_you" or "blocked"
   end
   -- scanned from near its middle, or there's nowhere better to
   -- scan it from: done. Otherwise it now knows a better spot.

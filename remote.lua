@@ -102,7 +102,7 @@ function remote.run(command)
       return "Remote: ignored (not a spot in the world)"
     end
     if not position.isSet() then
-      return "Remote: can't go to a spot: I don't know where I am (Set position)"
+      return "Remote: can't go to a spot: I don't know where I am (Set position)", "needs_you", "lost"
     end
     require("web").setDoing(("Remote: going to %d %d %d"):format(x, y, z))
     local ok, why = require("travel").to(x, y, z)

@@ -184,13 +184,14 @@ function smelt.work()
     local placed, why = placeFurnace(facing)
     if not placed then
       nextLook = os.clock() + RETRY_AFTER
-      return "Charcoal: " .. why
+      -- (no room for a furnace: only you can clear it)
+      return "Charcoal: " .. why, why:find("^needs room") and "needs_you" or why:find("^needs") and "waiting" or "blocked"
     end
     device = findFurnace(facing)
     if not device then
       turn.toFace(facing)
       nextLook = os.clock() + RETRY_AFTER
-      return "Charcoal: placed a furnace on its left, but can't use it"
+      return "Charcoal: placed a furnace on its left, but can't use it", "blocked"
     end
   end
 

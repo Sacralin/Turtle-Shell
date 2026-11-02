@@ -470,11 +470,11 @@ function craft.startWarehouse()
   local logs = logsCarried()
   if containersCarried() == 0 then
     if logs < craft.FIRST_LOGS then
-      return ("Starting the warehouse: needs %d logs to make its first barrels (has %d)"):format(craft.FIRST_LOGS, logs)
+      return ("Starting the warehouse: needs %d logs to make its first barrels (has %d)"):format(craft.FIRST_LOGS, logs), "waiting", "no_logs"
     end
     -- somewhere to set things down while it crafts: the chest it was given
     if not warehouse.containerOn("up") then
-      return "Starting the warehouse: needs a chest or barrel to set things down in while I craft (give it one)"
+      return "Starting the warehouse: needs a chest or barrel to set things down in while I craft (give it one)", "needs_you", "no_chest"
     end
     local made, why = firstTwoBarrels()
     craft.recover() -- what it set down comes back, and the pickaxe goes on
@@ -495,7 +495,7 @@ function craft.startWarehouse()
   if not ready then
     return "Starting the warehouse: " .. tostring(problem)
   end
-  return "Started the warehouse: made its first barrels from the logs I brought"
+  return "Started the warehouse: made its first barrels from the logs I brought", "idle"
 end
 
 
@@ -532,17 +532,17 @@ function craft.barrels(now)
       from = LOGS_FOR_BARRELS .. " " .. log:gsub("^minecraft:", "")
       if warehouse.fetch(log, LOGS_FOR_BARRELS) < LOGS_FOR_BARRELS then
         warehouse.store()
-        return "Couldn't fetch the logs to make barrels"
+        return "Couldn't fetch the logs to make barrels", "blocked"
       end
     elseif plank and planks >= PLANKS_FOR_BARRELS then
       from = PLANKS_FOR_BARRELS .. " " .. plank:gsub("^minecraft:", "")
       if warehouse.fetch(plank, PLANKS_FOR_BARRELS) < PLANKS_FOR_BARRELS then
         warehouse.store()
-        return "Couldn't fetch the planks to make barrels"
+        return "Couldn't fetch the planks to make barrels", "blocked"
       end
     else
       return ("Running low on barrels (%d spare), and there aren't %d logs (or %d planks) to make more"):format(
-        spare, LOGS_FOR_BARRELS, PLANKS_FOR_BARRELS)
+        spare, LOGS_FOR_BARRELS, PLANKS_FOR_BARRELS), "waiting", "no_logs"
     end
   end
   local made, why = makeBarrels()

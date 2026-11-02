@@ -32,7 +32,7 @@ local ASK_FILE = "setpos.txt"
 -- ================= 1. what's my job =================
 
 local function askRole()
-  web.setDoing("Setting up: waiting for my job")
+  web.setDoing("Setting up: waiting for my job", "needs_you", "not_set_up")
   while true do
     screen.header(role.get())
     print("Hello! What's my job?")
@@ -83,7 +83,7 @@ end
 -- ================= 2. web tracker =================
 
 local function askWeb()
-  web.setDoing("Setting up: waiting for the tracker address")
+  web.setDoing("Setting up: waiting for the tracker address", "needs_you", "not_set_up")
   while true do
     screen.header(role.get())
     print("Web tracker address, e.g.")
@@ -116,7 +116,7 @@ end
 
 -- Offer the worlds the tracker knows about, or a new name.
 local function askWorld()
-  web.setDoing("Setting up: waiting to be told which world this is")
+  web.setDoing("Setting up: waiting to be told which world this is", "needs_you", "not_set_up")
   local known = {}
   local list = web.isSetUp() and web.get("/worlds")
   if type(list) == "table" then
@@ -208,7 +208,7 @@ local function checkRequirements()
 
   local missing = screen.checklist("I need:", items)
   if #missing > 0 then
-    web.setDoing("Setting up: needs " .. table.concat(missing, ", "))
+    web.setDoing("Setting up: needs " .. table.concat(missing, ", "), "needs_you") -- (the reason from the words: fuel, a pickaxe...)
   end
   return #missing == 0
 end
@@ -267,12 +267,12 @@ function setup.run()
     -- (setpos): looking round would only find where it thought it
     -- was again.
     if fs.exists(ASK_FILE) then
-      web.setDoing("Waiting for you to tell me where I am (setpos)")
+      web.setDoing("Waiting for you to tell me where I am (setpos)", "needs_you", "lost")
       require("locate").run()
     else
       local found, why = require("locate").auto()
       if not found then
-        web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you")
+        web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you", "needs_you", "lost")
         require("locate").run()
       end
     end

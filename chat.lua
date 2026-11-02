@@ -39,9 +39,9 @@ end
 -- What it's doing, for its status.
 function chat.status()
   if not chat.box() then
-    return "Couldn't hear the chat: no Chat Box on me (put one on my right)"
+    return "Couldn't hear the chat: no Chat Box on me (put one on my right)", "needs_you", "no_tool"
   end
-  return "Listening to chat, and passing it to the tracker"
+  return "Listening to chat, and passing it to the tracker", "idle"
 end
 
 -- One line of text, at most TEXT_MAX long, with no control characters.

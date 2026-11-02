@@ -705,7 +705,7 @@ function warehouse.sort()
     end
     local ok, why = warehouse.store()
     if not ok then
-      return "Stored what it could: " .. why
+      return "Stored what it could: " .. why, "waiting", "full"
     end
     if not warehouse.hasDelivery() then
       break

@@ -252,7 +252,7 @@ function build.markOut()
   end
 
   while markersCarried() < needed do
-    web.setDoing(("Needs %d cobblestone to mark out the build's corners (has %d)"):format(needed, markersCarried()))
+    web.setDoing(("Needs %d cobblestone to mark out the build's corners (has %d)"):format(needed, markersCarried()), "needs_you", "needs_items")
     if toldToGoHome() then
       return "Didn't mark out the build: never got the cobblestone"
     end
@@ -270,7 +270,7 @@ function build.markOut()
   trip = trip + math.abs(x - lastX) + math.abs(y - lastY) + math.abs(z - lastZ)
   equipment.refuelFromInventory(trip * 2 + FUEL_SPARE)
   if not equipment.hasFuel(trip * 2 + FUEL_SPARE) then
-    return ("Needs about %d fuel to mark out the build"):format(trip * 2 + FUEL_SPARE)
+    return ("Needs about %d fuel to mark out the build"):format(trip * 2 + FUEL_SPARE), "needs_you", "no_fuel"
   end
 
   local done, problems = 0, {}
@@ -300,7 +300,7 @@ function build.markOut()
   if not home then
     result = result .. ", but couldn't get home: " .. tostring(homeWhy)
   end
-  return result
+  return result, (#problems > 0 or not home) and "blocked" or "idle"
 end
 
 
@@ -557,9 +557,9 @@ local buildPlan -- below
 -- Anything in the way inside the plan's area gets cleared.
 function build.run()
   -- the well first: it's the Miners' way down (well.lua)
-  local wellResult = require("well").work()
+  local wellResult, wellState, wellReason = require("well").work()
   if wellResult then
-    return wellResult
+    return wellResult, wellState, wellReason
   end
   local plan, why = build.plan()
   if not plan then
@@ -577,19 +577,19 @@ function build.run()
     end
     if #found > 0 then
       travel.home(toldToGoHome)
-      return ("Build area for %s blocked: %s: clear it, then Build again"):format(name, checker.describe(found))
+      return ("Build area for %s blocked: %s: clear it, then Build again"):format(name, checker.describe(found)), "needs_you", "in_the_way"
     end
     plan, why = build.plan() -- clear: now it's to build
     if not plan or plan.check then
       return "Couldn't build: " .. tostring(why or "the tracker still wants the area checked")
     end
   end
-  local ok, result = pcall(buildPlan, plan, area(plan))
+  local ok, result, state, reason = pcall(buildPlan, plan, area(plan))
   worldmap.setClearable(nil)
   if not ok then
     error(result, 0)
   end
-  return result
+  return result, state, reason
 end
 
 function buildPlan(plan, box)
@@ -608,16 +608,16 @@ function buildPlan(plan, box)
     if toldToGoHome() then
       progress.active = false -- until Build is pressed again
       saveProgress(progress)
-      return ("Stopped digging the hole for %s: told to go home"):format(name)
+      return ("Stopped digging the hole for %s: told to go home"):format(name), "idle"
     end
     goal = ("digging the hole for %s: %d tasks left"):format(name, left)
-    local result = dig.work(true)
+    local result, resultState, resultReason = dig.work(true)
     if not result then
-      web.setDoing(("Waiting for the hole for %s to be dug: %d tasks left, none free for me"):format(name, left))
+      web.setDoing(("Waiting for the hole for %s to be dug: %d tasks left, none free for me"):format(name, left), "waiting")
       travel.home(toldToGoHome)
       sleep(WAIT)
     elseif result:find("^Stopped") or result:find("^Waiting") then
-      return result
+      return result, resultState, resultReason
     end
     local latest = build.plan()
     left = latest and dig.left(latest) or left
@@ -639,7 +639,7 @@ function buildPlan(plan, box)
         wants = nil
         progress.active = false -- until Build is pressed again
         saveProgress(progress)
-        return ("Stopped building %s at layer %d of %d"):format(name, progress.y + 1, plan.height)
+        return ("Stopped building %s at layer %d of %d"):format(name, progress.y + 1, plan.height), "idle" -- (told to go home)
       end
       local cell = cells[progress.i]
       if carrying(cell.item) == 0 then
@@ -661,7 +661,7 @@ function buildPlan(plan, box)
           return "Stopped building: " .. collectWhy
         end
         if collectWhy then
-          web.setDoing(("Building %s, layer %d of %d: waiting: %s"):format(name, progress.y + 1, plan.height, collectWhy))
+          web.setDoing(("Building %s, layer %d of %d: waiting: %s"):format(name, progress.y + 1, plan.height, collectWhy), "waiting")
         end
         local recipes = require("recipes")
         if carrying(cell.item) == 0 then
@@ -720,7 +720,7 @@ function buildPlan(plan, box)
   goal = nil
   wants = nil
   travel.home()
-  return "Finished building " .. name .. "!"
+  return "Finished building " .. name .. "!", "idle"
 end
 
 

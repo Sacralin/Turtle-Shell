@@ -338,7 +338,7 @@ local function finishLadder(w)
   web.setDoing("Going down the well to put the ladder in")
   local ok, why = travel.to(w.x, w.ladderTo - 1, w.z)
   if not ok then
-    return "Couldn't get down the well to put the ladder in: " .. tostring(why)
+    return "Couldn't get down the well to put the ladder in: " .. tostring(why), "blocked"
   end
   web.setDoing("Putting the ladder in the well")
   local _, y = position.get()
@@ -382,11 +382,11 @@ function well.work()
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(worldName()))
   local fuelled, fuelWhy = equipment.topUp(house, true) -- (the well turns up coal)
   if not fuelled then
-    return "Waiting to dig the well: " .. tostring(fuelWhy)
+    return "Waiting to dig the well: " .. tostring(fuelWhy), "waiting", "no_fuel"
   end
   local depth = w.y - w.bottom
   if not equipment.hasFuel(depth * 14 + FUEL_SPARE) then
-    return "Waiting to dig the well: not enough fuel to dig it"
+    return "Waiting to dig the well: not enough fuel to dig it", "waiting", "no_fuel"
   end
 
   -- its spot not looked at yet: fly over it first (area.lua). Something
@@ -395,10 +395,10 @@ function well.work()
     local area = require("area")
     local found, why = area.checkFor(worldName(), "well", w.check, function() return orders.has("home") end)
     if not found then
-      return "Couldn't check the well's spot: " .. tostring(why)
+      return "Couldn't check the well's spot: " .. tostring(why), "blocked"
     end
     if #found > 0 then
-      return ("The well's spot was blocked (%s): the tracker's choosing another"):format(area.describe(found))
+      return ("The well's spot was blocked (%s): the tracker's choosing another"):format(area.describe(found)), "waiting"
     end
     w = info() -- clear: carry on with it
     if not w or w.check then
@@ -471,14 +471,14 @@ function well.work()
       if w.dugTo > w.bottom then
         return nil -- (digging on gets the stone for it)
       end
-      return "Waiting to build the well's rim: nothing to build it with"
+      return "Waiting to build the well's rim: nothing to build it with", "waiting", "needs_items"
     end
     web.setDoing("Building the rim round the well")
     local ok, why = buildRim(w)
     if not ok then
       -- (it digs on, and tries again once the shaft's done)
       rimFailed = w.dugTo > w.bottom
-      return "Couldn't build the well's rim: " .. tostring(why)
+      return "Couldn't build the well's rim: " .. tostring(why), "blocked"
     end
     tell({ rim = true })
     w.rim = true
@@ -498,7 +498,7 @@ function well.work()
     return finishLadder(w)
   end
   if w.dugTo <= w.bottom then
-    return ("Dug the well, down to y=%d"):format(w.bottom)
+    return ("Dug the well, down to y=%d"):format(w.bottom), "idle"
   end
   return nil
 end

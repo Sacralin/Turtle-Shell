@@ -196,10 +196,10 @@ function woodcutter.work()
     goal = nil
     if house and deliver(house) then
       travel.home()
-      return "Took the logs to the warehouse"
+      return "Took the logs to the warehouse", "idle"
     end
     travel.home()
-    return ("Have %d logs, and no warehouse to take them to: ready to make one"):format(woodcutter.logs())
+    return ("Have %d logs, and no warehouse to take them to: ready to make one"):format(woodcutter.logs()), "idle"
   end
   goal = ("wood: %d of %d logs"):format(woodcutter.logs(), WANT_LOGS)
   -- a tree: one the tracker knows of first, else look round for one
@@ -211,7 +211,7 @@ function woodcutter.work()
     local log, why = woodcutter.lookForTree(toldToGoHome)
     if not log then
       travel.home()
-      return "Couldn't find a tree: " .. tostring(why)
+      return "Couldn't find a tree: " .. tostring(why), "blocked"
     end
     tree = bottomOf(log)
   end

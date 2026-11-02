@@ -375,7 +375,7 @@ function dig.work(now)
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(worldName()))
   local fuelled, fuelWhy = equipment.topUp(house)
   if not fuelled then
-    return "Waiting to dig the hole: " .. tostring(fuelWhy)
+    return "Waiting to dig the hole: " .. tostring(fuelWhy), "waiting", web.reasonOf(fuelWhy) or "no_fuel"
   end
   local needed = require("quarry").stillNeeded()
   deepslateWanted = needed == nil or needed == false or needed > 0
@@ -392,7 +392,7 @@ function dig.work(now)
     if blocked then
       tell(state.task, { blocked = why })
       save(nil)
-      return ("Stopped digging task %s of the hole: %s"):format(state.task, why)
+      return ("Stopped digging task %s of the hole: %s"):format(state.task, why), "blocked", "in_the_way"
     end
     if why ~= "full" then
       break
@@ -403,7 +403,7 @@ function dig.work(now)
       local keep = {}
       for _, name in ipairs(SEAL) do keep[name] = KEEP_SEAL end
       if not equipment.makeRoom(ROOM_NEEDED, keep) then
-        return "Stopped digging the hole: full of things worth keeping, and no warehouse to bring them to"
+        return "Stopped digging the hole: full of things worth keeping, and no warehouse to bring them to", "blocked", "full"
       end
     elseif not ok then
       return "Stopped digging the hole: " .. tostring(deliverWhy)
@@ -415,9 +415,11 @@ function dig.work(now)
   local ok, deliverWhy = deliver()
   travel.home()
   if why == "told to go home" then
-    return "Stopped digging the hole: told to go home"
+    return "Stopped digging the hole: told to go home", "idle"
   end
-  return ("Stopped digging the hole: %s%s"):format(why, ok and "" or (" (" .. tostring(deliverWhy) .. ")"))
+  -- (low on fuel: the task's still ours, carried on once it's fuelled)
+  return ("Stopped digging the hole: %s%s"):format(why, ok and "" or (" (" .. tostring(deliverWhy) .. ")")),
+    tostring(why):find("fuel") and "waiting" or "blocked"
 end
 
 -- Is it part way through a task? (carried on first)

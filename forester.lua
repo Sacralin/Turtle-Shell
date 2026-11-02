@@ -1011,7 +1011,7 @@ function forester.work()
   local house = findWarehouse()
   if not fuelUp(house) then
     goal = "nothing: needs fuel"
-    return "Waiting: low on fuel: asked the warehouse for coal"
+    return "Waiting: low on fuel: asked the warehouse for coal", "waiting", "no_fuel"
   end
 
   -- short of saplings for the farm? the warehouse first, then wild trees

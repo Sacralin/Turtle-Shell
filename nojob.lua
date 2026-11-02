@@ -29,7 +29,11 @@ while true do
   if said and not (fastUntil and os.clock() < fastUntil) then
     said = nil -- (a while after the last remote command: back to the usual)
   end
-  web.setDoing(said or "No job: just the apps")
+  if said then
+    web.setDoing(said)
+  else
+    web.setDoing("No job: just the apps", "idle")
+  end
   local status
   if not web.isSetUp() then
     status = "not set up (run setweb)"

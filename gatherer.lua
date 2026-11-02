@@ -141,7 +141,7 @@ function gatherer.work()
   local house = findWarehouse()
   if not fuelUp(house) then
     goal = "nothing: needs fuel"
-    return "Waiting: low on fuel: asked the warehouse for coal"
+    return "Waiting: low on fuel: asked the warehouse for coal", "waiting", "no_fuel"
   end
   if house and carried() > 0 and deliver(house) then
     travel.home()

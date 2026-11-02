@@ -183,11 +183,11 @@ end
 function quarry.stoppedWhy()
   local q = load()
   if q.toldHome then
-    return "Home: told to stay (Go mining carries on)"
+    return "Home: told to stay (Go mining carries on)", "idle"
   elseif q.lost then
-    return "Stopped: " .. q.lost .. " (setpos, or Go mining once it's back where it should be)"
+    return "Stopped: " .. q.lost .. " (setpos, or Go mining once it's back where it should be)", "needs_you", "lost"
   elseif q.waitUntil and os.epoch("utc") < q.waitUntil then
-    return "Waiting: " .. tostring(q.waitWhy) .. " (tries again in a few minutes)"
+    return "Waiting: " .. tostring(q.waitWhy) .. " (tries again in a few minutes)", "waiting"
   end
   return nil
 end
@@ -820,7 +820,7 @@ function quarry.work(now, deepslateOnly)
   local needed, stock, targets = quarry.stillNeeded()
   if needed == nil then
     goal = "nothing: no warehouse"
-    return "Waiting: " .. stock -- no warehouse (stock is the reason)
+    return "Waiting: " .. stock, "waiting", "no_warehouse" -- (stock is the reason)
   end
   local function short(item) return (stock[item] or 0) < (targets[item] or 0) end
   local function label(item) return (item:gsub("^.*:", ""):gsub("^raw_", "")) end
@@ -860,13 +860,13 @@ function quarry.work(now, deepslateOnly)
   end
   local fuelled, fuelWhy = fuelUp(findWarehouse() or {})
   if not fuelled then
-    return "Waiting: " .. fuelWhy
+    return "Waiting: " .. fuelWhy, "waiting", "no_fuel"
   end
   if not hunt and not forCoal and not needed then
-    return "Waiting: no plan to build yet, and the targets are met (or no ore's been found for them)"
+    return "Waiting: no plan to build yet, and the targets are met (or no ore's been found for them)", "idle"
   end
   if not hunt and not forCoal and needed <= 0 then
-    return "Waiting: the warehouse has all the deepslate the plan needs, and enough of everything"
+    return "Waiting: the warehouse has all the deepslate the plan needs, and enough of everything", "idle"
   end
   local tripLevel = forCoal and COAL_LEVEL or LEVEL
 
@@ -875,7 +875,7 @@ function quarry.work(now, deepslateOnly)
   local tripFuel = (QUARRY_DISTANCE + math.abs(homeY - tripLevel)) * 2 + LINE_LENGTH * 4 + FUEL_SPARE
   equipment.refuelFromInventory(tripFuel + 1000)
   if not equipment.hasFuel(tripFuel) then
-    return ("Waiting: needs fuel to go quarrying (about %d)"):format(tripFuel)
+    return ("Waiting: needs fuel to go quarrying (about %d)"):format(tripFuel), "waiting", "no_fuel"
   end
 
   local result, reason
@@ -901,26 +901,32 @@ function quarry.work(now, deepslateOnly)
   else
     result = result .. (" (%d deepslate was still needed)"):format(needed)
   end
+  local said, saidWhy = nil, nil -- its state and reason (nil: from the words, web.lua)
   if reason == "told to go home" then
     quarry.setPaused(true) -- until Go mining
     result = result .. ". Home until Go mining"
+    said = "idle"
   elseif result:find("lost track of where I am") or result:find("lost%?") then
     -- look round and have the tracker match it to the map, before giving up
     local found, why = require("locate").auto()
     if found then
       result = result .. ". Worked out where I am by looking round: carrying on"
+      said = "working"
     else
       setLost(result .. " (looking round didn't settle it: " .. tostring(why) .. ")")
       result = result .. ". Stopped"
+      said, saidWhy = "needs_you", "lost"
     end
   elseif reason and reason:find("^waiting for the well") then
     waitAfter(result) -- the Builder's digging it: look again in a while
     result = result .. ". Trying again in a few minutes"
+    said = "waiting"
   elseif (reason and reason:find("^couldn't")) or (carrying() > 0 and emptySlots() < 4) then
     waitAfter(result) -- blocked, or full with nowhere to put it: try again in a while
     result = result .. ". Trying again in a few minutes"
+    said = "waiting"
   end
-  return result
+  return result, said, saidWhy
 end
 
 

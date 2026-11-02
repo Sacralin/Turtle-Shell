@@ -26,8 +26,9 @@ function move.waitWhilePaused()
   end
   local web = require("web")
   local was = web.doing()
+  local wasState, wasReason = web.state()
   local paused = "Paused (Pause work, on the turtle)" .. ((was and not was:find("^Paused")) and (": was " .. was) or "")
-  web.setDoing(paused)
+  web.setDoing(paused, "paused")
   while _G.EMPIRE_PAUSED do
     local remote = require("remote")
     local command = require("orders").takeFirst(remote.is)
@@ -35,12 +36,16 @@ function move.waitWhilePaused()
       _G.EMPIRE_REMOTE = true
       local ok, said = pcall(remote.run, command)
       _G.EMPIRE_REMOTE = false
-      web.setDoing("Paused, moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))))
+      web.setDoing("Paused, moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))), "paused")
     else
       sleep(1)
     end
   end
-  web.setDoing(was and not was:find("^Paused") and was or "Ready, nothing to do yet")
+  if was and not was:find("^Paused") then
+    web.setDoing(was, wasState, wasReason) -- (as it was: its state too)
+  else
+    web.setDoing("Ready, nothing to do yet", "idle")
+  end
 end
 
 

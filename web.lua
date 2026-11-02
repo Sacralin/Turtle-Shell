@@ -9,14 +9,49 @@
 -- The address and secret key are kept in web.cfg, which is
 -- NOT in git. Set them in game with:
 --   setweb <address> <key>
+--
+-- State: beside the sentence it's doing ("Waiting: low on fuel:
+-- asked the warehouse for coal"), every report says its state, one
+-- of these fixed names, so the tracker never guesses from the words:
+--   working    busy doing its job
+--   waiting    waiting for something that'll come by itself (fuel
+--              from the warehouse, a cooldown, a hole others are digging)
+--   blocked    can't carry on without something changing ("Couldn't...",
+--              "Stopped...", something in the way, no way there)
+--   idle       between jobs: nothing to do
+--   needs_you  only a person can fix it (give it an item, a chest, its
+--              tool, set its position, answer its setup questions)
+--   paused     Pause work (on the turtle, or from the tracker)
+-- and, for waiting, blocked and needs_you, a reason where there is one:
+--   no_fuel       not enough fuel
+--   no_chest      needs a chest or barrel
+--   no_warehouse  no warehouse yet
+--   no_logs       no wood (logs or planks) to make what it needs
+--   no_route      couldn't find a way there
+--   full          its inventory, or the warehouse, is full
+--   lost          doesn't know where it is (setpos)
+--   in_the_way    something's in the way (the build area, the furnace spot...)
+--   no_tool       its tool (or Chat Box) isn't on it
+--   needs_items   needs things put in its inventory
+--   not_set_up    its setup questions haven't been answered
+--   crashed       its program stopped with an error
+--
+-- web.setDoing(text, state, reason): state and reason are optional.
+-- Left out, web.classify works them out from the sentence's words
+-- (the one place that does), so there's always a state. They're
+-- passed wherever that would be wrong or vague. A job's work function
+-- that returns a sentence may return the state (and reason) after it.
 -- ==================================================
 
 local web = {}
 
 local CONFIG_FILE = "web.cfg"
 
--- what this computer is up to, e.g. "Needs fuel", for the tracker
+-- what this computer is up to, e.g. "Needs fuel", for the tracker,
+-- and its state and reason (see the top)
 local doing = "Starting up"
+local state = "working"
+local reason = nil
 
 
 -- The saved address and key, or nil if not set up.
@@ -67,16 +102,110 @@ function web.setUp(url, key)
 end
 
 
+-- The states and reasons (see the top).
+web.STATES = { working = true, waiting = true, blocked = true, idle = true, needs_you = true, paused = true }
+web.REASONS = {
+  no_fuel = true, no_chest = true, no_warehouse = true, no_logs = true, no_route = true, full = true,
+  lost = true, in_the_way = true, no_tool = true, needs_items = true, not_set_up = true, crashed = true,
+}
+
+-- The words that give each state, tried in this order on the sentence
+-- (in lower case; Lua patterns): the first that matches wins, and
+-- anything else is working.
+local STATE_WORDS = {
+  { "paused", { "^paused" } },
+  { "blocked", { "^crashed" } },
+  -- the tracker's Remote control: what it did (someone's at the controls)
+  { "working", { "^remote: going to" } },
+  { "idle", { "^remote:" } },
+  { "needs_you", { "needs you", "give it", "put one on", "clear it", "setpos", "set position",
+    "lost track of where", "no home set", "waiting for you", "^setting up: needs", "^setting up: waiting",
+    "^setting up: working out where", "^charcoal: needs room" } },
+  { "idle", { "^ready", "nothing to do", "^no job", "^listening to chat", "^home", "^already ", "^finished",
+    "^dug the", "^built the", "^started the warehouse", "^took the logs", "^have ", "^back from mining",
+    "told to go home", "told to stay", "explored and up to date", "^waiting: no plan",
+    "^waiting: the warehouse has all" } },
+  { "waiting", { "^waiting", "trying again", "tries again" } }, -- (before blocked: "Waiting: couldn't reach...")
+  { "blocked", { "^couldn't", "^stopped", "^didn't", ": couldn't", "but couldn't", "and couldn't", "in the way", "blocked",
+    "can't" } },
+  { "waiting", { ": waiting", "^setting up", "^needs ", "^starting the warehouse", "^running low on",
+    "^stored what it could", "^charcoal: needs", "asked the warehouse" } },
+}
+
+-- The words that give each reason (for waiting, blocked and
+-- needs_you), tried in this order.
+local REASON_WORDS = {
+  { "crashed", { "^crashed" } },
+  { "lost", { "setpos", "set position", "lost track of where", "^lost", "lost%?", "where i am" } },
+  { "not_set_up", { "^setting up: waiting" } },
+  { "full", { " is full", "full of", "inventory full", "^full", "%(full%)" } },
+  { "no_chest", { "chest or barrel", "barrel or chest", "barrels or chests" } },
+  { "no_warehouse", { "no warehouse" } },
+  { "no_fuel", { "fuel" } },
+  { "no_logs", { " logs", " planks" } },
+  { "no_tool", { "pickaxe", "chat box", "geo scanner" } },
+  { "in_the_way", { "in the way", "blocked", "is in the hole", "is where the rim goes", "can't clear", "needs room" } },
+  { "no_route", { "no way", "find a way", "couldn't get", "couldn't reach", "unreachable", "stuck", "kept getting" } },
+  { "needs_items", { "^setting up: needs", "^needs ", "nothing to build it with" } },
+}
+
+local function firstMatch(rules, text)
+  for _, rule in ipairs(rules) do
+    for _, pattern in ipairs(rule[2]) do
+      if text:find(pattern) then
+        return rule[1]
+      end
+    end
+  end
+  return nil
+end
+
+-- The reason in a sentence's words, or nil.
+function web.reasonOf(text)
+  return firstMatch(REASON_WORDS, tostring(text or ""):lower())
+end
+
+-- The state (and reason) a sentence says, from its words: the one
+-- place that guesses, for when the state isn't given.
+function web.classify(text)
+  local lower = tostring(text or ""):lower()
+  local found = firstMatch(STATE_WORDS, lower) or "working"
+  if found == "waiting" or found == "blocked" or found == "needs_you" then
+    return found, firstMatch(REASON_WORDS, lower)
+  end
+  return found, nil
+end
+
 -- Say what this computer is doing now. It goes in every report,
--- so the tracker shows it.
-function web.setDoing(text)
+-- so the tracker shows it. newState and newReason are optional (see
+-- the top): left out, or not one of the names, they're worked out
+-- from the words.
+function web.setDoing(text, newState, newReason)
+  text = tostring(text or "")
   doing = text
+  if web.STATES[newState] then
+    state = newState
+    if web.REASONS[newReason] then
+      reason = newReason
+    elseif newState == "waiting" or newState == "blocked" or newState == "needs_you" then
+      reason = web.reasonOf(text)
+    else
+      reason = nil
+    end
+  else
+    state, reason = web.classify(text)
+  end
   _G.EMPIRE_DOING = text -- (for BitDriven OS's bar and the Info app)
 end
 
 -- What it says it's doing (just that: web.status() makes the whole report)
 function web.doing()
   return doing
+end
+
+-- Its state and reason (see the top), as set with the sentence.
+function web.state()
+  return state, reason
 end
 
 -- This computer's report: who it is and how it's doing.
@@ -111,6 +240,8 @@ function web.status()
     release = release,
     commit = commit,
     doing = doing,
+    state = state,   -- working, waiting, blocked, idle, needs_you or paused (see the top)
+    reason = reason, -- why, for some (nil for none)
     time = os.epoch("utc"), -- when this was true, in milliseconds
   }
 

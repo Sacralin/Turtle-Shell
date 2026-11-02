@@ -67,7 +67,7 @@ local function waitForFuel()
     print("To work out where I am, I need to")
     print("move a little. Put some fuel (like")
     print("coal) in my inventory, please.")
-    web.setDoing("Setting up: needs a little fuel to move")
+    web.setDoing("Setting up: needs a little fuel to move", "needs_you", "no_fuel")
     equipment.waitForNewItems()
   end
 end
@@ -225,7 +225,7 @@ function locate.auto()
       table.insert(ways, { df = 0, du = -1, dr = 0 })
     end
 
-    web.setDoing(("Lost: working out where I am from what's round me (look %d)"):format(step + 1))
+    web.setDoing(("Lost: working out where I am from what's round me (look %d)"):format(step + 1), "working")
     local reply = web.post("/locate", { world = require("world").get() or "",
       near = { nearX, nearY, nearZ }, facing = nearFacing, radius = 32, cells = cells })
     if type(reply) ~= "table" then
@@ -274,7 +274,7 @@ end
 -- Work out where we are, with checks, and save it. If we had a
 -- home already, ask whether this is the new one.
 function locate.run()
-  web.setDoing("Setting up: working out where I am")
+  web.setDoing("Setting up: working out where I am", "needs_you", "lost") -- (it asks you)
   waitForFuel()
   while true do
     local x, y, z, facing = attempt()
@@ -300,7 +300,7 @@ function locate.run()
     screen.printInColour(why, colours.red)
     print("")
     print("Let's start again.")
-    web.setDoing("Setting up: working out where I am (" .. why .. ")")
+    web.setDoing("Setting up: working out where I am (" .. why .. ")", "needs_you", "lost")
     sleep(4)
   end
 end
