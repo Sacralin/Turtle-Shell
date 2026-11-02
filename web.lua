@@ -140,6 +140,9 @@ function web.status()
     elseif report.role == "Forester" then
       report.wants = require("forester").wants() -- coal, when it's low
       report.goal = require("forester").goal()
+    elseif report.role == "Woodcutter" then
+      report.wants = require("woodcutter").wants() -- coal, when it's low
+      report.goal = require("woodcutter").goal()
     elseif report.role == "Gatherer" then
       report.wants = require("gatherer").wants() -- coal, when it's low
       report.goal = require("gatherer").goal()

@@ -25,6 +25,8 @@ local ROLE_FILE = "role.txt"
 --   Gatherer: no pickaxe; stays at home and picks up items lying
 --            on the ground nearby, which a Create Radar sees
 --            (gatherer.lua, radar.lua).
+--   Woodcutter: fells wild trees near home for wood, looking round
+--            for them itself: a colony's first wood (woodcutter.lua).
 --   Crafter: runs the warehouse (warehouse.lua) and crafts. It
 --            keeps its chunk loaded too, so it works while no one's
 --            near. Two sides aren't enough for a pickaxe, a chunk
@@ -37,13 +39,14 @@ role.EQUIPMENT = {
   Scanner = { right = "Geo scanner", left = "Chunk loader" },
   Forester = { right = "Axe", left = "Chunk loader" },
   Gatherer = { left = "Chunk loader" },
+  Woodcutter = { right = "Axe", left = "Chunk loader" },
 }
 
 -- Tools a role carries in its inventory, rather than equipped.
 role.CARRY = {
   Crafter = { "Crafting table" },
 }
-role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer" }
+role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer", "Woodcutter" }
 
 -- No job: a turtle with just BitDriven OS and its apps. Its work
 -- (the Colony app) doesn't start: autostart.txt says so to the OS.

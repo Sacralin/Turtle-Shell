@@ -329,6 +329,129 @@ local function makeBarrels(logName)
   return made
 end
 
+-- ================= a colony's first warehouse =================
+-- Starting out there are no barrels at all, just the logs it's
+-- carrying (the Woodcutter's). Making barrels needs somewhere to put
+-- things while it crafts (the workbench above and below home), so the
+-- first 2 are made with what's in the way set down on top of it (dropped
+-- up, and picked up again after), and go above and below home as the
+-- workbench. Then the usual way (makeBarrels) makes 4 more: the in and
+-- out chests, and 2 spare.
+
+craft.FIRST_LOGS = 4 + LOGS_FOR_BARRELS -- 4 logs for the first 2 barrels, 8 for the next 4
+
+local function logsCarried()
+  local n = 0
+  for slot = 1, 16 do
+    local item = turtle.getItemDetail(slot)
+    if item and isLog(item.name) then
+      n = n + item.count
+    end
+  end
+  return n
+end
+
+-- From 4 logs: 16 planks, 3 of them into 6 slabs, then 2 barrels (6
+-- planks and 2 slabs each). Must be at home, nothing above it. Returns
+-- how many it made, and why not.
+local function firstTwoBarrels()
+  if not onRight(equipment.CRAFTING_TABLES) then
+    return 0, "needs a crafting table to carry"
+  end
+  -- just 4 logs left in it: the rest goes on top of it
+  local logSlot = slotWith("_log")
+  each(function(slot)
+    if slot == logSlot then
+      turtle.dropUp(turtle.getItemCount(slot) - 4)
+    else
+      turtle.dropUp()
+    end
+  end)
+  if logSlot ~= 1 then
+    turtle.select(logSlot)
+    turtle.transferTo(1)
+    turtle.select(1)
+  end
+  if not turtle.craft() then
+    return 0, "couldn't make planks"
+  end
+  -- 3 planks in a row: 6 slabs
+  local plankSlot = slotWith("_planks")
+  turtle.select(plankSlot)
+  if plankSlot ~= 1 then
+    turtle.transferTo(1)
+  end
+  turtle.select(1)
+  turtle.transferTo(2, 1)
+  turtle.transferTo(3, 1)
+  if not turtle.craft(1) then
+    return 0, "couldn't make slabs"
+  end
+  -- the planks to slot 16 and the slabs to 15, then into their places
+  for _, move in ipairs({ { "_planks", 16 }, { "_slab", 15 } }) do
+    local slot = slotWith(move[1])
+    if slot and slot ~= move[2] then
+      turtle.select(slot)
+      turtle.transferTo(move[2])
+    end
+  end
+  turtle.select(16)
+  for _, slot in ipairs(BARREL_PLANKS) do
+    turtle.transferTo(slot, 2)
+  end
+  turtle.select(15)
+  for _, slot in ipairs(BARREL_SLABS) do
+    turtle.transferTo(slot, 2)
+  end
+  for _, slot in ipairs({ 15, 16 }) do -- the spare plank and slabs: on top too
+    turtle.select(slot)
+    turtle.dropUp()
+  end
+  turtle.select(1)
+  local ok = turtle.craft()
+  return ok and containersCarried() or 0, not ok and "couldn't make barrels" or nil
+end
+
+-- Start the warehouse from the logs it's carrying, if it has no barrels
+-- to start it with. Must be at home. Returns a sentence.
+function craft.startWarehouse()
+  local logs = logsCarried()
+  local logSlot = slotWith("_log")
+  local logName = logSlot and turtle.getItemDetail(logSlot).name
+  if containersCarried() == 0 then
+    if logs < craft.FIRST_LOGS then
+      return ("Starting the warehouse: needs %d logs to make its first barrels (has %d)"):format(craft.FIRST_LOGS, logs)
+    end
+    -- room above it to set things down (natural ground's dug out)
+    local found, block = turtle.inspectUp()
+    if found and require("terrain").isNatural(block) then
+      turtle.digUp()
+    elseif found then
+      return "Starting the warehouse: " .. block.name .. " is above me (I need the space)"
+    end
+    local made, why = firstTwoBarrels()
+    craft.recover() -- what it set down comes back, and the pickaxe goes on
+    if made < 2 then
+      return "Starting the warehouse: " .. tostring(why)
+    end
+  end
+  -- the workbench (above and below home), then 4 more: the in and out chests
+  warehouse.setUpChests()
+  if containersCarried() < 2 and logsCarried() >= LOGS_FOR_BARRELS then
+    local made, why = makeBarrels(logName)
+    craft.recover()
+    if made == 0 then
+      return "Starting the warehouse: " .. tostring(why)
+    end
+  end
+  local ready, problem = warehouse.setUpChests()
+  if not ready then
+    return "Starting the warehouse: " .. tostring(problem)
+  end
+  return "Started the warehouse: made its first barrels from the logs I brought"
+end
+
+
 -- Low on spare containers? Make barrels from logs in the warehouse.
 -- Must be at home. Returns a sentence, or nil if there was nothing
 -- to do.

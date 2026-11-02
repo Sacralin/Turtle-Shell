@@ -836,7 +836,7 @@ end
 
 -- Wild trees near home the Scanner has found (the bottom log of
 -- each), nearest first, leaving out the farm's own.
-local function wildTrees()
+function forester.wildTrees()
   local hx, hy, hz = position.home()
   local list = web.get(("/known?world=%s&match=tree:&x=%d&y=%d&z=%d&max=16"):format(
     textutils.urlEncode(require("world").get() or ""), hx, hy, hz))
@@ -857,7 +857,7 @@ end
 -- Fell a wild tree: stand beside its bottom log and fell it all
 -- (its leaves then drop saplings as they decay). Returns true if
 -- it got to it.
-local function fell(t)
+function forester.fellWild(t)
   for side = 0, 3 do
     local sx, sz = t.x - STEP_X[side], t.z - STEP_Z[side]
     if travel.to(sx, t.y, sz, function() return orders.has("home") end) then
@@ -1034,7 +1034,7 @@ function forester.work()
     saplingWants = nil
   end
   if count(isPlantable) < 4 then
-    local wild = wildTrees()
+    local wild = forester.wildTrees()
     local felled = 0
     for _, t in ipairs(wild) do
       if felled >= 3 or count(isPlantable) >= 8 or orders.has("home") then
@@ -1042,7 +1042,7 @@ function forester.work()
       end
       goal = "saplings: felling wild trees near home"
       web.setDoing(("Short of saplings: felling a wild tree at %d %d %d"):format(t.x, t.y, t.z))
-      if fell(t) then
+      if forester.fellWild(t) then
         felled = felled + 1
       end
     end

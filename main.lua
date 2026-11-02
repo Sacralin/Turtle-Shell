@@ -233,6 +233,8 @@ local function idleWork()
     result = require("forester").work()
   elseif role.get() == "Gatherer" then
     result = require("gatherer").work()
+  elseif role.get() == "Woodcutter" then
+    result = require("woodcutter").work()
   elseif role.get() == "Builder" and not require("build").isActive() and os.clock() - lastResume > RESUME_EVERY then
     lastResume = os.clock()
     result = require("well").work() -- (no build on: the well still gets dug)
@@ -246,6 +248,10 @@ local function idleWork()
     result = ok and "Back home to carry on" or ("Couldn't get home: " .. tostring(why))
   elseif role.get() == "Crafter" then
     result = require("warehouse").sort()
+    if result and result:find("^Setting up the warehouse") and result:find("needs a barrel") then
+      -- no barrels to set it up with: a colony's first warehouse, from the logs it brought
+      result = require("craft").startWarehouse()
+    end
     if not result and require("warehouse").topUpFuel() then
       result = "Topped up its fuel from the warehouse"
     end

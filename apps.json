@@ -41,7 +41,8 @@
         "locate.lua",
         "equipment.lua",
         "setup.lua",
-        "area.lua"
+        "area.lua",
+        "woodcutter.lua"
       ]
     },
     {

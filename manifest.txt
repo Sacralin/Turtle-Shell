@@ -25,6 +25,7 @@ well.lua
 dig.lua
 scanner.lua
 forester.lua
+woodcutter.lua
 gatherer.lua
 smelt.lua
 radar.lua
