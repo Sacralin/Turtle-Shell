@@ -84,7 +84,10 @@ end
 -- if the tracker can't be reached. Returns it, or nil and why not.
 function build.plan()
   -- (sites=1: she builds a building at its own site, not her home)
-  local plan, why = web.get("/plan?sites=1&world=" .. textutils.urlEncode(require("world").get() or ""))
+  local plan, why, answered = web.get("/plan?sites=1&world=" .. textutils.urlEncode(require("world").get() or ""))
+  if not plan and answered then
+    return nil, why -- the tracker said no (nothing to build, waiting for your OK...): not the old plan
+  end
   if plan then
     if not looksRight(plan) then
       return nil, "the tracker's plan doesn't look right"

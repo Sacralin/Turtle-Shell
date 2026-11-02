@@ -255,9 +255,10 @@ function web.get(path)
   local response, reason, failed = http.get(cfg.url .. path, headers(cfg))
   if not response then
     if failed then
-      -- the tracker said no, and why
+      -- the tracker said no, and why (third: it answered, it isn't away)
       reason = failed.readAll() or reason
       failed.close()
+      return nil, reason, true
     end
     return nil, reason
   end
