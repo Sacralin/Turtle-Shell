@@ -2,7 +2,7 @@
 -- setpos.lua : work out again where the turtle is
 --
 -- Run it in game if the turtle has lost track of where it is:
---   setpos
+--   setpos   (or Set position, in the apps)
 -- It forgets its position and restarts, then asks you for its
 -- coordinates three times, moving in between, to check them
 -- (see locate.lua). It keeps its home unless you say otherwise.
@@ -10,6 +10,15 @@
 -- (A turtle picked up and put down somewhere else usually
 -- notices by itself and asks.)
 -- ==================================================
+
+-- (it's one of the apps too, a tap away: so it checks first)
+print("Forget where I am, restart, and")
+print("work it out again? (y/n)")
+local answer = read()
+if not answer or answer:lower():sub(1, 1) ~= "y" then
+  print("Left as it was.")
+  return
+end
 
 -- The work runs alongside this (BitDriven OS), remembering where it
 -- thinks it is: hold it still first, or it saves that straight back

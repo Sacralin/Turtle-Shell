@@ -38,7 +38,6 @@
         "radar.lua",
         "craft.lua",
         "recipes.lua",
-        "setpos.lua",
         "locate.lua",
         "equipment.lua",
         "setup.lua"
@@ -58,6 +57,17 @@
       ],
       "files": [
         "FindPlayer.lua"
+      ]
+    },
+    {
+      "name": "Set position",
+      "about": "Forget where the turtle is and work it out again (asks you)",
+      "run": "setpos.lua",
+      "on": [
+        "turtle"
+      ],
+      "files": [
+        "setpos.lua"
       ]
     }
   ]
