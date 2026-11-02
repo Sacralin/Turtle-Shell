@@ -13,7 +13,7 @@
 
 -- (it's one of the apps too, a tap away: so it checks first)
 print("Forget where I am, restart, and")
-print("work it out again? (y/n)")
+print("ask you where I am? (y/n)")
 local answer = read()
 if not answer or answer:lower():sub(1, 1) ~= "y" then
   print("Left as it was.")
@@ -30,9 +30,14 @@ while _G.EMPIRE_MOVING and waited < 10 do
 end
 _G.BITDRIVEN_HOLD_WORK = true
 
+-- a note for the restart: ask, rather than look round on its own
+-- (that only finds where it thought it was again)
+local note = fs.open("setpos.txt", "w")
+note.write("ask")
+note.close()
 require("position").forget()
 pcall(function() require("quarry").clearLost() end) -- a Miner stopped because it was lost can go again
 print("Forgotten where I am. Restarting to")
-print("work it out again...")
+print("ask you where I am...")
 sleep(2)
 os.reboot()

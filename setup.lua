@@ -24,6 +24,9 @@ local world = require("world")
 
 local setup = {}
 
+-- left by setpos: ask where it is, don't work it out alone
+local ASK_FILE = "setpos.txt"
+
 
 
 -- ================= 1. what's my job =================
@@ -247,12 +250,20 @@ function setup.run()
   checkNotMoved()
   if not position.isSet() then
     -- on its own first (looking round, the tracker matching it to
-    -- the map); then with you
-    local found, why = require("locate").auto()
-    if not found then
-      web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you")
+    -- the map); then with you. Straight to you if you said so
+    -- (setpos): looking round would only find where it thought it
+    -- was again.
+    if fs.exists(ASK_FILE) then
+      web.setDoing("Waiting for you to tell me where I am (setpos)")
       require("locate").run()
+    else
+      local found, why = require("locate").auto()
+      if not found then
+        web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you")
+        require("locate").run()
+      end
     end
+    fs.delete(ASK_FILE)
   end
   if role.get() == "Crafter" and position.atHome() then
     require("craft").recover() -- in case it stopped part way through crafting
