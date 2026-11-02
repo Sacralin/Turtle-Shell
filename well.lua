@@ -378,6 +378,23 @@ function well.work()
     return "Waiting to dig the well: not enough fuel to dig it"
   end
 
+  -- its spot not looked at yet: fly over it first (area.lua). Something
+  -- built there and the tracker picks another spot
+  if type(w.check) == "table" then
+    local area = require("area")
+    local found, why = area.checkFor(worldName(), "well", w.check, function() return orders.has("home") end)
+    if not found then
+      return "Couldn't check the well's spot: " .. tostring(why)
+    end
+    if #found > 0 then
+      return ("The well's spot was blocked (%s): the tracker's choosing another"):format(area.describe(found))
+    end
+    w = info() -- clear: carry on with it
+    if not w or w.check then
+      return nil
+    end
+  end
+
   -- the shaft (its spots are hers to dig, whatever's there)
   if w.dugTo > w.bottom then
     worldmap.setClearable({ minX = w.x - 1, maxX = w.x + 1, minY = w.bottom, maxY = w.y, minZ = w.z - 1, maxZ = w.z + 1 })

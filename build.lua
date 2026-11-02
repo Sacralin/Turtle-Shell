@@ -561,6 +561,25 @@ function build.run()
   if not plan then
     return "Couldn't build: " .. why
   end
+  -- its area not looked at yet (the tracker asks, when the Build tab
+  -- says to): fly over it first, and if something's built there, stop
+  if type(plan.check) == "table" then
+    local name = plan.name or "the build"
+    local checker = require("area")
+    local found, checkWhy = checker.checkFor(require("world").get() or "", tostring(plan.building or ""), plan.check, toldToGoHome)
+    if not found then
+      travel.home(toldToGoHome)
+      return ("Couldn't check the area for %s: %s"):format(name, tostring(checkWhy))
+    end
+    if #found > 0 then
+      travel.home(toldToGoHome)
+      return ("Build area for %s blocked: %s: clear it, then Build again"):format(name, checker.describe(found))
+    end
+    plan, why = build.plan() -- clear: now it's to build
+    if not plan or plan.check then
+      return "Couldn't build: " .. tostring(why or "the tracker still wants the area checked")
+    end
+  end
   local ok, result = pcall(buildPlan, plan, area(plan))
   worldmap.setClearable(nil)
   if not ok then

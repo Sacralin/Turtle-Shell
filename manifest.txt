@@ -17,6 +17,7 @@ pathfind.lua
 nav.lua
 travel.lua
 mining.lua
+area.lua
 build.lua
 warehouse.lua
 quarry.lua

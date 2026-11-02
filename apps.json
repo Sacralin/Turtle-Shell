@@ -40,7 +40,8 @@
         "recipes.lua",
         "locate.lua",
         "equipment.lua",
-        "setup.lua"
+        "setup.lua",
+        "area.lua"
       ]
     },
     {

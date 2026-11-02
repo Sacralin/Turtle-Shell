@@ -47,7 +47,7 @@ end
 -- What the work's status means for the bar: it needs you (a
 -- problem), it's paused, or nothing to say. Colony's status is in
 -- _G.EMPIRE_DOING (web.setDoing).
-local NEEDS_YOU = { "needs you", "^Lost", "^Crashed", "^Stopped", "^Couldn't", "Waiting for you", "^Setting up: needs" }
+local NEEDS_YOU = { "needs you", "^Lost", "^Crashed", "^Stopped", "^Couldn't", "Waiting for you", "^Setting up: needs", "^Build area for .* blocked" }
 local function workNote()
   if _G.BITDRIVEN_UPDATING then
     return "Updating to " .. tostring(_G.BITDRIVEN_UPDATING) .. "...", false
