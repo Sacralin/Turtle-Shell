@@ -450,7 +450,8 @@ local function deliver()
     web.setDoing("I was a block out: found the in chest next to me and corrected my position")
   end
   for slot = 1, 16 do -- all of it, coal too (it tops up its tank from the warehouse: charcoal first)
-    if turtle.getItemCount(slot) > 0 then
+    local item = turtle.getItemDetail(slot)
+    if item and not equipment.isTool(item.name) then -- (but not its spare tools: they're for its other jobs)
       turtle.select(slot)
       turtle.dropDown()
     end

@@ -230,7 +230,7 @@ function mining.tidy()
   for slot = 1, 16 do
     local item = turtle.getItemDetail(slot)
     if item then
-      local keep = KEEP[item.name]
+      local keep = KEEP[item.name] or equipment.isTool(item.name) -- (its spare tools: another job's)
       if item.name == "minecraft:cobblestone" then
         keep = cobble < COBBLE_LIMIT
         cobble = cobble + item.count

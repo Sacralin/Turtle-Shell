@@ -56,10 +56,14 @@ local function findWarehouse()
   return house
 end
 
+-- What it's carrying (not its spare tools: they're for its other jobs)
 local function carried()
   local total = 0
   for slot = 1, 16 do
-    total = total + turtle.getItemCount(slot)
+    local item = turtle.getItemDetail(slot)
+    if item and not equipment.isTool(item.name) then
+      total = total + item.count
+    end
   end
   return total
 end
@@ -77,7 +81,8 @@ local function deliver(house)
     return false
   end
   for slot = 1, 16 do
-    if turtle.getItemCount(slot) > 0 then
+    local item = turtle.getItemDetail(slot)
+    if item and not equipment.isTool(item.name) then -- (its spare tools stay: they're for its other jobs)
       turtle.select(slot)
       turtle.dropDown()
     end

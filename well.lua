@@ -240,7 +240,7 @@ local function deliver()
       end
       if isSeal and sealKept < KEEP_SEAL then
         sealKept = sealKept + item.count
-      elseif not keep[item.name] then
+      elseif not keep[item.name] and not equipment.isTool(item.name) then
         turtle.select(slot)
         turtle.dropDown()
       end

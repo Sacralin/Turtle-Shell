@@ -171,6 +171,34 @@ function COMMANDS.build()
   web.setDoing(require("build").run())
 end
 
+-- Change job (the tracker's Change job button: jobMiner, jobForester...,
+-- or jobNone). Home first (every job starts from there), then it
+-- starts again as the new one: setup puts on that job's tool from its
+-- inventory, and says what's missing if it hasn't got it.
+local function changeJob(job)
+  if job == role.get() then
+    web.setDoing("Already a " .. job)
+    return
+  end
+  web.setDoing(("Changing job to %s: going home first"):format(job))
+  showStatus()
+  local ok, why = require("travel").home()
+  if not ok then
+    web.setDoing(("Couldn't change job to %s: couldn't get home (%s)"):format(job, tostring(why)))
+    return
+  end
+  role.set(job)
+  web.setDoing(("Changing job to %s: starting again"):format(job))
+  web.send(web.status()) -- (the tracker hears it now, not after the restart)
+  sleep(1)
+  os.reboot()
+end
+
+for _, job in ipairs(role.JOBS) do
+  COMMANDS["job" .. job] = function() changeJob(job) end
+end
+COMMANDS.jobNone = function() changeJob(role.NONE) end
+
 
 -- Remember what's around us while we wait, so if we're picked
 -- up and put down somewhere else we notice (see setup.lua).
