@@ -71,6 +71,12 @@ end
 -- so the tracker shows it.
 function web.setDoing(text)
   doing = text
+  _G.EMPIRE_DOING = text -- (for BitDriven OS's bar and the Info app)
+end
+
+-- What it says it's doing (just that: web.status() makes the whole report)
+function web.doing()
+  return doing
 end
 
 -- This computer's report: who it is and how it's doing.

@@ -13,11 +13,29 @@ local worldmap = require("worldmap")
 local move = {}
 
 
+-- Paused (the Pause work app sets _G.EMPIRE_PAUSED): every move comes
+-- through here, so it stops before the next one and waits, wherever
+-- it's got to, saying so, till it's let go on.
+function move.waitWhilePaused()
+  if not _G.EMPIRE_PAUSED then
+    return
+  end
+  local web = require("web")
+  local was = web.doing()
+  web.setDoing("Paused (Pause work, on the turtle)" .. ((was and not was:find("^Paused")) and (": was " .. was) or ""))
+  while _G.EMPIRE_PAUSED do
+    sleep(1)
+  end
+  web.setDoing(was and not was:find("^Paused") and was or "Ready, nothing to do yet")
+end
+
+
 -- Tell position.lua where we're going, try the move,
 -- then tell position.lua whether it worked (and what's below
 -- us now, so it can tell if we're picked up and moved). Both
 -- where we were and where we are now are open space, for the map.
 local function doMove(moveFunction, x, y, z)
+  move.waitWhilePaused()
   local fromX, fromY, fromZ = position.get()
   _G.EMPIRE_MOVING = true -- the updater won't restart us until it's recorded
   position.startMove(x, y, z)

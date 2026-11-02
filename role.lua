@@ -45,6 +45,11 @@ role.CARRY = {
 }
 role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer" }
 
+-- No job: a turtle with just BitDriven OS and its apps. Its work
+-- (the Colony app) doesn't start: autostart.txt says so to the OS.
+role.NONE = "None"
+role.NONE_LABEL = "None (just the apps)"
+
 
 -- Has this turtle been given a job? (Turtles set up before
 -- roles were asked are Builders.)
@@ -52,11 +57,19 @@ function role.isSet()
   return not turtle or fs.exists(ROLE_FILE) or fs.exists("position.json")
 end
 
--- Give this turtle its job.
+-- Give this turtle its job (or none: role.NONE). It takes effect
+-- when it next starts.
 function role.set(name)
   local file = fs.open(ROLE_FILE, "w")
   file.write(name)
   file.close()
+  if name == role.NONE then
+    file = fs.open("autostart.txt", "w")
+    file.write("none")
+    file.close()
+  else
+    fs.delete("autostart.txt")
+  end
 end
 
 -- This computer's role, like "Builder".

@@ -192,6 +192,16 @@ end
 -- function checked before every step (e.g. "told to go home?").
 -- Returns true, or false and why not.
 function travel.to(goalX, goalY, goalZ, shouldStop)
+  -- never off somewhere while still saying it's got nothing to do
+  -- (the job says what it's going for, but in case it hasn't yet)
+  local x0, y0, z0 = position.get()
+  if x0 ~= goalX or y0 ~= goalY or z0 ~= goalZ then
+    local web = require("web")
+    local doing = tostring(web.doing())
+    if doing:find("nothing to do") or doing:find("^Ready") or doing:find("^Starting up") then
+      web.setDoing(("Going to %d %d %d"):format(goalX, goalY, goalZ))
+    end
+  end
   local why = "no way found"
   local avoid = {} -- spots other turtles were in the way, this trip
   local surprises = 0 -- steps in a row the tracker said were open, that weren't

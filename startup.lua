@@ -230,6 +230,7 @@ local function keepCheckingForUpdates()
     -- updater, just try again next time
     local ok, installed = pcall(update)
     if ok and installed then
+      _G.BITDRIVEN_UPDATING = readFile("version.txt") -- (the bar says so)
       -- not in the middle of a move or a turn (move.lua and turn.lua
       -- set this): a restart then could lose count of where it is
       local waited = 0

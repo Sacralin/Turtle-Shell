@@ -10,7 +10,10 @@
 --     computers: the colony's work) gets a screen of its own, and
 --     is started again if it stops
 --   - the Apps screen lists the rest to pick from, and a Shell
--- Tab, or tapping the bar along the top, switches between them.
+-- Tab, or tapping the bar along the top, switches between them (Tab
+-- in the Shell finishes names instead: tap the bar there). The bar
+-- also says when the work needs you, is paused, or is about to
+-- restart for an update.
 -- The work never stops for it: an app runs alongside. (A tool that
 -- changes what the work remembers, like setpos, sets
 -- _G.BITDRIVEN_HOLD_WORK to hold it still until it restarts.)
@@ -39,6 +42,26 @@ local function readFile(fileName)
   local text = file.readAll()
   file.close()
   return text
+end
+
+-- What the work's status means for the bar: it needs you (a
+-- problem), it's paused, or nothing to say. Colony's status is in
+-- _G.EMPIRE_DOING (web.setDoing).
+local NEEDS_YOU = { "needs you", "^Lost", "^Crashed", "^Stopped", "^Couldn't", "Waiting for you", "^Setting up: needs" }
+local function workNote()
+  if _G.BITDRIVEN_UPDATING then
+    return "Updating to " .. tostring(_G.BITDRIVEN_UPDATING) .. "...", false
+  end
+  if _G.EMPIRE_PAUSED then
+    return "Paused", true
+  end
+  local doing = tostring(_G.EMPIRE_DOING or "")
+  for _, pattern in ipairs(NEEDS_YOU) do
+    if doing:find(pattern) then
+      return "! Needs you", true
+    end
+  end
+  return nil
 end
 
 local function version()
@@ -127,9 +150,14 @@ end
 
 -- The list to pick from: arrows and Enter, or tap one.
 -- Returns the one picked.
-local function pick(items)
+local function pick(items, start)
   local w, h = term.getSize()
   local sel, top = 1, 1
+  for i, item in ipairs(items) do
+    if item.name == start then
+      sel = i
+    end
+  end
   local rows = h - 2
   local colour = term.isColour()
   while true do
@@ -171,14 +199,19 @@ local function pick(items)
       elseif a == keys.enter then
         return items[sel]
       end
+    elseif event == "mouse_scroll" then
+      sel = math.max(1, math.min(#items, sel + a))
     elseif event == "mouse_click" and y >= 2 and items[top + y - 2] then
       return items[top + y - 2]
     end
   end
 end
 
+local openApp = nil -- the app open on the Apps screen, if any
+
 local function appsScreen(apps)
   return function()
+    local last = nil
     while true do
       local items = {}
       for _, app in ipairs(apps) do
@@ -187,7 +220,8 @@ local function appsScreen(apps)
         end
       end
       table.insert(items, { name = "Shell", run = "rom/programs/shell.lua" })
-      local item = pick(items)
+      local item = pick(items, last)
+      last = item.name
       term.setBackgroundColour(colours.black)
       term.setTextColour(colours.white)
       term.clear()
@@ -201,7 +235,9 @@ local function appsScreen(apps)
         if item.name == "Shell" then
           print("Type exit to go back to the apps")
         end
+        openApp = item.name
         shell.run(item.run)  -- an app's errors (Ctrl+T too) stop the app, not this
+        openApp = nil
       end
     end
   end
@@ -238,9 +274,14 @@ local function drawBar()
     t.from, t.to = x, x + #label - 1
     x = x + #label
   end
-  local title = "BitDriven v" .. version()
+  local note, warn = workNote()
+  local title = note or ("BitDriven v" .. version())
   if x + #title <= width then
     parent.setCursorPos(width - #title + 1, 1)
+    if warn then
+      parent.setBackgroundColour(colour and colours.red or colours.black)
+      parent.setTextColour(colours.white)
+    end
     parent.write(title)
   end
   parent.setBackgroundColour(colours.black)
@@ -279,8 +320,10 @@ end
 
 _G.BITDRIVEN = true -- (screen.lua leaves the title to the bar)
 local apps = loadApps()
+-- (a device can have its work switched off: a turtle with no job)
+local noWork = (readFile("autostart.txt") or ""):find("none") ~= nil
 for _, app in ipairs(apps) do
-  if app.autostart then
+  if app.autostart and not noWork then
     addTask(app.name, keepRunning(app), true)
     break -- one: the device's work
   end
@@ -295,7 +338,8 @@ drawBar()
 while true do
   local event = table.pack(os.pullEventRaw())
   local name = event[1]
-  if name == "key" and event[2] == keys.tab and #tasks > 1 then
+  local shellOpen = openApp == "Shell" and tasks[focus].name == "Apps"
+  if name == "key" and event[2] == keys.tab and #tasks > 1 and not shellOpen then
     switchTo(focus % #tasks + 1)
   elseif name:find("^mouse_") and event[4] == 1 then
     if name == "mouse_click" then

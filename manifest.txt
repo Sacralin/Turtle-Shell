@@ -35,3 +35,6 @@ screen.lua
 equipment.lua
 setup.lua
 FindPlayer.lua
+info.lua
+pause.lua
+options.lua

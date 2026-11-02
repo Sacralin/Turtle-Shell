@@ -64,6 +64,7 @@ local function keepReporting()
         wait = RETRY_EVERY
       end
     end
+    _G.EMPIRE_WEB = webStatus -- (for the Info app)
     if busy then
       showStatus()
     end
@@ -250,6 +251,7 @@ local function idleWork()
 end
 
 local function doJob()
+  _G.EMPIRE_PAUSED = fs.exists("paused.txt") -- paused before a restart: still paused
   if turtle then
     require("setup").run()
     noteWhereWeAre()
@@ -272,6 +274,13 @@ local function doJob()
   while true do
     if seconds % 5 == 0 then
       showStatus() -- every 5 seconds, so it doesn't flicker
+    end
+
+    -- paused (the Pause work app): nothing new started, commands
+    -- wait their turn
+    while _G.EMPIRE_PAUSED do
+      require("move").waitWhilePaused()
+      showStatus()
     end
 
     -- carry out the next command, or wait a moment for one

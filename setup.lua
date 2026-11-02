@@ -39,12 +39,21 @@ local function askRole()
     for i, job in ipairs(role.JOBS) do
       print(("  %d. %s"):format(i, job))
     end
+    print(("  %d. %s"):format(#role.JOBS + 1, role.NONE_LABEL))
     print("")
     write("Number: ")
-    local job = role.JOBS[tonumber(read())]
+    local number = tonumber(read())
+    local job = role.JOBS[number]
     if job then
       role.set(job)
       return
+    end
+    if number == #role.JOBS + 1 then
+      -- no work: start again with just the OS and its apps
+      role.set(role.NONE)
+      print("No job: just the apps. Restarting...")
+      sleep(2)
+      os.reboot()
     end
     print("Pick one of the numbers.")
     sleep(2)

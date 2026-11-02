@@ -44,6 +44,53 @@
       ]
     },
     {
+      "name": "Info",
+      "about": "What's what on this device: release, job, position, fuel, disk, tracker, last crash",
+      "run": "info.lua",
+      "on": [
+        "turtle",
+        "computer",
+        "pocket"
+      ],
+      "files": [
+        "info.lua"
+      ]
+    },
+    {
+      "name": "Pause work",
+      "about": "Stop the turtle's work before its next move, and let it carry on again",
+      "run": "pause.lua",
+      "on": [
+        "turtle"
+      ],
+      "files": [
+        "pause.lua"
+      ]
+    },
+    {
+      "name": "Set position",
+      "about": "Forget where the turtle is and work it out again (asks you)",
+      "run": "setpos.lua",
+      "on": [
+        "turtle"
+      ],
+      "files": [
+        "setpos.lua"
+      ]
+    },
+    {
+      "name": "Settings",
+      "about": "The tracker's address and key, the world, the name, the job",
+      "run": "options.lua",
+      "on": [
+        "turtle",
+        "computer"
+      ],
+      "files": [
+        "options.lua"
+      ]
+    },
+    {
       "name": "FindPlayer",
       "about": "Pick an online player and watch where they are",
       "run": "FindPlayer.lua",
@@ -57,17 +104,6 @@
       ],
       "files": [
         "FindPlayer.lua"
-      ]
-    },
-    {
-      "name": "Set position",
-      "about": "Forget where the turtle is and work it out again (asks you)",
-      "run": "setpos.lua",
-      "on": [
-        "turtle"
-      ],
-      "files": [
-        "setpos.lua"
       ]
     }
   ]

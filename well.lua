@@ -335,6 +335,7 @@ end
 
 -- The ladder, from the bottom up, where it's missing. Returns a sentence.
 local function finishLadder(w)
+  web.setDoing("Going down the well to put the ladder in")
   local ok, why = travel.to(w.x, w.ladderTo - 1, w.z)
   if not ok then
     return "Couldn't get down the well to put the ladder in: " .. tostring(why)
@@ -382,6 +383,7 @@ function well.work()
     worldmap.setClearable({ minX = w.x - 1, maxX = w.x + 1, minY = w.bottom, maxY = w.y, minZ = w.z - 1, maxZ = w.z + 1 })
     local result = nil
     -- to the middle of the lowest layer dug (or just above the ground, to start)
+    web.setDoing(("Going to the well at %d %d %d to dig it"):format(w.x, w.y, w.z))
     local ok, why = travel.to(w.x, w.dugTo, w.z, function() return orders.has("home") end)
     if not ok then
       result = "Couldn't get to the well to dig it: " .. tostring(why)
