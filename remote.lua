@@ -11,6 +11,7 @@
 --   remote:goto:X,Y,Z               there, by its usual route (it must
 --                                   know where it is: Set position)
 --   remote:pause  remote:resume     the Pause work app, from afar
+--   remote:sethome                  home is here now, facing this way
 --
 -- Only these, and only whole numbers in range: anything else is
 -- ignored. Nothing in a command is ever run as code.
@@ -110,6 +111,11 @@ function remote.run(command)
       return ("Remote: couldn't get to %d %d %d: %s (%s)"):format(x, y, z, tostring(why), where())
     end
     return ("Remote: got to %d %d %d"):format(x, y, z)
+  elseif action == "sethome" and rest == "" then
+    if not position.setHome() then
+      return "Remote: can't set home: I don't know where I am (Set position)", "needs_you", "lost"
+    end
+    return ("Remote: home is here now (%s)"):format(where())
   end
   return "Remote: ignored (not a command I know)"
 end

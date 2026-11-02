@@ -187,6 +187,17 @@ function position.set(x, y, z, facing)
   save()
 end
 
+-- Home is here now (where we are, facing the way we face): the
+-- tracker's Set home. Returns false if we don't know where we are.
+function position.setHome()
+  if not data.set then
+    return false
+  end
+  data.home = { x = data.x, y = data.y, z = data.z, facing = data.facing }
+  save()
+  return true
+end
+
 -- We're at these real coordinates, but home stays where it was
 -- (put back somewhere else by hand).
 function position.moveTo(x, y, z, facing)
