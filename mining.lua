@@ -21,8 +21,8 @@
 -- block in between gets looked at.
 --
 -- While digging it looks at every block around it and follows
--- any vein of ore it wants. Anything interesting it sees (other
--- ores, lava, old mineshafts...) goes on the map (sightings.lua). It tidies up after itself: junk
+-- any vein of ore it wants. Every block it sees (other ores, lava,
+-- old mineshafts, stone...) goes on the map (sightings.lua). It tidies up after itself: junk
 -- blocks are kept as filler, ore holes are plugged, and each
 -- branch is filled back in as it backs out. Only the corridor
 -- and shaft stay open.
@@ -339,6 +339,7 @@ local function lookAt(inspect, where)
   local x, y, z = where()
   if not found then
     worldmap.set(x, y, z, "open") -- air
+    sightings.saw(nil, x, y, z)
   else
     sightings.saw(block, x, y, z)
     if block.name == "minecraft:water" or block.name == "minecraft:lava" then

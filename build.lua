@@ -508,6 +508,7 @@ local function placeCell(plan, y, cell)
     return false, "couldn't place " .. cell.name .. " (something in the way at " .. x .. " " .. wy .. " " .. z .. ")"
   end
   worldmap.set(x, wy, z, "wall")
+  sightings.saw({ name = cell.name }, x, wy, z) -- (it went down as air when it was dug)
   return true
 end
 

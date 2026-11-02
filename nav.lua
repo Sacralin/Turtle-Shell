@@ -17,7 +17,7 @@
 -- It goes in straight lines, so it can get stuck behind a wall.
 -- (Finding a way round comes later.)
 --
--- Anything interesting it bumps into or digs out goes on the map
+-- Every block it bumps into or digs out goes on the map
 -- (see sightings.lua).
 -- ==================================================
 
@@ -78,9 +78,7 @@ local function tryMove(moveFunction, dig, attack, inspect, target, side)
 
     local found, block = inspect()
     local x, y, z = target()
-    if found then
-      sightings.saw(block, x, y, z)
-    end
+    sightings.saw(found and block or nil, x, y, z) -- (nothing there: air, and a mob in the way)
 
     if not found then
       if not attack() then -- a mob, or something passing

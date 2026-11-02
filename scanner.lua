@@ -256,6 +256,34 @@ local function learnDeep()
   end
 end
 
+-- Send the whole of a scan from x, y, z to the tracker's full map
+-- (POST /map/scan): each block as where it is from here and its
+-- place in a list of names, which keeps it small (about 60 KB for a
+-- radius of 8). What isn't listed is air. Turtles aren't listed:
+-- they move about. If it doesn't get there, it's not tried again.
+local function sendScan(found, x, y, z)
+  local palette, index, blocks = {}, {}, {}
+  for _, block in ipairs(found) do
+    if type(block) == "table" and type(block.name) == "string" and type(block.x) == "number"
+        and type(block.y) == "number" and type(block.z) == "number"
+        and not block.name:find("^computercraft:turtle") then
+      local p = index[block.name]
+      if not p then
+        if #palette >= 512 then
+          return -- (the tracker takes no more names than that)
+        end
+        palette[#palette + 1] = block.name
+        p = #palette - 1
+        index[block.name] = p
+      end
+      blocks[#blocks + 1] = { block.x, block.y, block.z, p }
+    end
+  end
+  local none = textutils.empty_json_array -- (so nothing's [] in the JSON, not {})
+  pcall(web.post, "/map/scan", { world = require("world").get() or "", x = x, y = y, z = z, radius = RADIUS,
+    palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none })
+end
+
 -- Scan round here and put every ore on the map. Returns how many
 -- ores, or nil and why.
 local function scanHere()
@@ -268,6 +296,7 @@ local function scanHere()
     return nil, "the scan didn't work: " .. tostring(found)
   end
   local x, y, z = position.get()
+  sendScan(found, x, y, z)
   learn(found, x, y, z)
   local ores = 0
   -- trees too, for the Forester: one mark per tree, at the bottom
@@ -354,6 +383,7 @@ local function survey()
             local ok, found = pcall(device.scan, RADIUS)
             if ok and type(found) == "table" then
               scans = scans + 1
+              sendScan(found, sx, sy, sz)
               for _, b in ipairs(found) do
                 if type(b) == "table" and type(b.name) == "string" and type(b.x) == "number" and surveyed(b.name) then
                   local x, y, z = sx + b.x, sy + b.y, sz + b.z

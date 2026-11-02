@@ -22,8 +22,8 @@
 -- A count of open blocks and walls per section lets a long way be
 -- planned section by section (see pathfind.lua).
 --
--- (This is separate from sightings.lua, which reports
--- interesting blocks to the tracker.)
+-- (This is separate from sightings.lua, which reports every
+-- block seen to the tracker, for its full map.)
 -- ==================================================
 
 local worldmap = {}

@@ -157,7 +157,7 @@ function web.status()
       report.warehouse = { items = items, containers = containers, empty = empty }
     end
 
-    -- interesting blocks seen since the last report (sightings.lua)
+    -- blocks seen since the last report (sightings.lua), for the full map
     local seen = require("sightings").batch()
     if #seen > 0 then
       report.sightings = seen

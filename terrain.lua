@@ -1,8 +1,8 @@
 -- ==================================================
 -- terrain.lua : what kind of block is this?
 --
--- Used by nav.lua (only natural terrain may be dug) and
--- sightings.lua (which blocks are worth putting on the map).
+-- Used by nav.lua (only natural terrain may be dug), mining.lua
+-- and the rest. (Every block goes on the map now: see sightings.lua.)
 -- Takes a block as turtle.inspect gives it: { name, tags }.
 -- ==================================================
 
@@ -40,11 +40,6 @@ local NATURAL_NAMES = {
   ["tfmg:bauxite"] = true, ["tfmg:galena"] = true,
 }
 
-local LIQUIDS = {
-  ["minecraft:water"] = true,
-  ["minecraft:lava"] = true,
-}
-
 
 function terrain.isOre(block)
   if block.name:find("_ore$") then
@@ -64,16 +59,6 @@ function terrain.isNatural(block)
     end
   end
   return false
-end
-
--- Worth putting on the map: ores, liquids, and anything that
--- isn't natural terrain (buildings, chests, spawners...).
--- Not turtles or computers: they move about.
-function terrain.isInteresting(block)
-  if block.name:find("^computercraft:") then
-    return false
-  end
-  return terrain.isOre(block) or LIQUIDS[block.name] or not terrain.isNatural(block)
 end
 
 
