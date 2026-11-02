@@ -42,7 +42,8 @@
         "equipment.lua",
         "setup.lua",
         "area.lua",
-        "woodcutter.lua"
+        "woodcutter.lua",
+        "chat.lua"
       ]
     },
     {

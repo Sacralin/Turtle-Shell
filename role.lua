@@ -27,6 +27,9 @@ local ROLE_FILE = "role.txt"
 --            (gatherer.lua, radar.lua).
 --   Woodcutter: fells wild trees near home for wood, looking round
 --            for them itself: a colony's first wood (woodcutter.lua).
+--   Chat:    stays at home with a Chat Box: passes what's said in
+--            game to the tracker, and says what you type there
+--            (chat.lua).
 --   Crafter: runs the warehouse (warehouse.lua) and crafts. It
 --            keeps its chunk loaded too, so it works while no one's
 --            near. Two sides aren't enough for a pickaxe, a chunk
@@ -40,13 +43,14 @@ role.EQUIPMENT = {
   Forester = { right = "Axe", left = "Chunk loader" },
   Gatherer = { left = "Chunk loader" },
   Woodcutter = { right = "Axe", left = "Chunk loader" },
+  Chat = { right = "Chat box", left = "Chunk loader" },
 }
 
 -- Tools a role carries in its inventory, rather than equipped.
 role.CARRY = {
   Crafter = { "Crafting table" },
 }
-role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer", "Woodcutter" }
+role.JOBS = { "Builder", "Miner", "Crafter", "Scanner", "Forester", "Gatherer", "Woodcutter", "Chat" }
 
 -- No job: a turtle with just BitDriven OS and its apps. Its work
 -- (the Colony app) doesn't start: autostart.txt says so to the OS.

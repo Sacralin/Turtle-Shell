@@ -235,6 +235,12 @@ local function idleWork()
     result = require("gatherer").work()
   elseif role.get() == "Woodcutter" then
     result = require("woodcutter").work()
+  elseif role.get() == "Chat" then
+    -- (chat.run does the work, beside this: here just what it's doing)
+    local doing = require("chat").status()
+    if web.status().doing ~= doing then
+      result = doing
+    end
   elseif role.get() == "Builder" and not require("build").isActive() and os.clock() - lastResume > RESUME_EVERY then
     lastResume = os.clock()
     result = require("well").work() -- (no build on: the well still gets dug)
@@ -284,6 +290,8 @@ local function idleWork()
       why = "Ready, nothing to do: " .. require("well").idleWhy()
     elseif role.get() == "Crafter" then
       why = "Ready, nothing to do: the warehouse is sorted, and nobody's asked for anything"
+    elseif role.get() == "Chat" then
+      why = require("chat").status()
     end
     local quiet = why or "Ready, nothing to do yet"
     if web.status().doing ~= quiet then
@@ -350,7 +358,12 @@ end
 
 
 -- Run, and if anything goes wrong, tell the tracker before stopping.
-local ok, err = xpcall(function() parallel.waitForAny(doJob, keepReporting) end, debug.traceback)
+-- (the Chat job listens beside its work: chat.lua)
+local running = { doJob, keepReporting }
+if turtle and role.get() == "Chat" then
+  table.insert(running, require("chat").run)
+end
+local ok, err = xpcall(function() parallel.waitForAny(table.unpack(running)) end, debug.traceback)
 if not ok then
   if tostring(err):find("Terminated") then
     error("Terminated", 0) -- Ctrl+T: you stopped it

@@ -42,6 +42,11 @@ function equipment.GEO_SCANNERS(name)
   return name:find("geo_scanner") ~= nil
 end
 
+-- Advanced Peripherals' Chat Box (the Chat job)
+function equipment.CHAT_BOXES(name)
+  return name:find("chat_box") ~= nil
+end
+
 -- the things a role can ask for (see role.lua)
 equipment.TOOLS = {
   ["Geo scanner"] = equipment.GEO_SCANNERS,
@@ -49,6 +54,7 @@ equipment.TOOLS = {
   ["Pickaxe"] = equipment.PICKAXES,
   ["Chunk loader"] = equipment.CHUNK_LOADERS,
   ["Crafting table"] = equipment.CRAFTING_TABLES,
+  ["Chat box"] = equipment.CHAT_BOXES,
 }
 
 -- Is this item one of the tools (pickaxe, chunk loader...)?
