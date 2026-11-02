@@ -329,6 +329,10 @@ for _, app in ipairs(apps) do
   end
 end
 addTask("Apps", appsScreen(apps))
+if noWork and fs.exists("nojob.lua") then
+  -- no work, but still on the tracker: it reports, on a screen of its own
+  addTask("Status", keepRunning({ name = "Status", run = "nojob.lua" }))
+end
 tasks[focus].win.setVisible(true)
 for _, t in ipairs(tasks) do
   resume(t, { n = 0 })

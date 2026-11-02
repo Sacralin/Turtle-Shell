@@ -43,7 +43,8 @@
         "setup.lua",
         "area.lua",
         "woodcutter.lua",
-        "chat.lua"
+        "chat.lua",
+        "nojob.lua"
       ]
     },
     {

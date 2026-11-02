@@ -49,11 +49,10 @@ local function askRole()
       return
     end
     if number == #role.JOBS + 1 then
-      -- no work: start again with just the OS and its apps
+      -- no work: the tracker and world first (it still reports:
+      -- nojob.lua), then start again with just the OS and its apps
       role.set(role.NONE)
-      print("No job: just the apps. Restarting...")
-      sleep(2)
-      os.reboot()
+      return
     end
     print("Pick one of the numbers.")
     sleep(2)
@@ -255,6 +254,11 @@ function setup.run()
   end
   if not world.isSet() then
     askWorld()
+  end
+  if role.get() == role.NONE then
+    print("No job: just the apps. Restarting...")
+    sleep(2)
+    os.reboot()
   end
   checkNotMoved()
   if not position.isSet() then
