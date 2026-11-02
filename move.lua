@@ -16,15 +16,29 @@ local move = {}
 -- Paused (the Pause work app sets _G.EMPIRE_PAUSED): every move comes
 -- through here, so it stops before the next one and waits, wherever
 -- it's got to, saying so, till it's let go on.
+--
+-- It's the work that's paused, not you: the tracker's Remote control
+-- still moves it meanwhile (remote.lua), and those moves don't wait
+-- (_G.EMPIRE_REMOTE).
 function move.waitWhilePaused()
-  if not _G.EMPIRE_PAUSED then
+  if not _G.EMPIRE_PAUSED or _G.EMPIRE_REMOTE then
     return
   end
   local web = require("web")
   local was = web.doing()
-  web.setDoing("Paused (Pause work, on the turtle)" .. ((was and not was:find("^Paused")) and (": was " .. was) or ""))
+  local paused = "Paused (Pause work, on the turtle)" .. ((was and not was:find("^Paused")) and (": was " .. was) or "")
+  web.setDoing(paused)
   while _G.EMPIRE_PAUSED do
-    sleep(1)
+    local remote = require("remote")
+    local command = require("orders").takeFirst(remote.is)
+    if command then
+      _G.EMPIRE_REMOTE = true
+      local ok, said = pcall(remote.run, command)
+      _G.EMPIRE_REMOTE = false
+      web.setDoing("Paused, moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))))
+    else
+      sleep(1)
+    end
   end
   web.setDoing(was and not was:find("^Paused") and was or "Ready, nothing to do yet")
 end

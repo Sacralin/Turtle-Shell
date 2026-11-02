@@ -25,6 +25,17 @@ function orders.take()
   return table.remove(waiting, 1)
 end
 
+-- The oldest waiting command that matches(command), removed from
+-- the list, or nil. (The rest keep their turn.)
+function orders.takeFirst(matches)
+  for i, command in ipairs(waiting) do
+    if matches(command) then
+      return table.remove(waiting, i)
+    end
+  end
+  return nil
+end
+
 -- Is this command waiting? (Doesn't remove it.)
 function orders.has(command)
   for _, waitingCommand in ipairs(waiting) do
