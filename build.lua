@@ -5,11 +5,15 @@
 -- (its Build tab), and the turtles fetch it. It's only ever
 -- data, a list of blocks, never code.
 --
--- Where it goes: the Builder's home is just outside the middle
--- of the build's front. The build goes away from her, the way
--- her home faces, and its bottom layer replaces the ground she
--- stands on. (The tracker's Plan.cs does the same sums, to
--- show the corners.)
+-- What she builds is her world's building being built, from the
+-- tracker's list (its Build tab: each world has its own buildings,
+-- built one after another).
+--
+-- Where it goes: its site (plan.site), or her home if it hasn't one
+-- of its own: the spot just outside the middle of the build's front,
+-- on the ground. The build goes away from there, the way the site
+-- faces, and its bottom layer replaces the ground under it. (The
+-- tracker's Plan.cs does the same sums, to show the corners.)
 --
 -- For now it can mark the build out: a cobblestone block on
 -- the ground at each of the four corners, so you can see how
@@ -79,7 +83,8 @@ end
 -- The plan: the tracker's latest, or the one we saved last time
 -- if the tracker can't be reached. Returns it, or nil and why not.
 function build.plan()
-  local plan, why = web.get("/plan?world=" .. textutils.urlEncode(require("world").get() or ""))
+  -- (sites=1: she builds a building at its own site, not her home)
+  local plan, why = web.get("/plan?sites=1&world=" .. textutils.urlEncode(require("world").get() or ""))
   if plan then
     if not looksRight(plan) then
       return nil, "the tracker's plan doesn't look right"
@@ -102,6 +107,11 @@ end
 -- Where block x, y, z of the plan goes in the world.
 function build.toWorld(plan, x, y, z)
   local homeX, homeY, homeZ, homeFacing = position.home()
+  local site = plan.site
+  if type(site) == "table" and type(site.x) == "number" and type(site.y) == "number"
+      and type(site.z) == "number" and type(site.facing) == "number" then
+    homeX, homeY, homeZ, homeFacing = site.x, site.y, site.z, site.facing
+  end
   -- as if she faced south, standing just outside the middle of the front
   local across, ahead = x - math.floor(plan.width / 2), z + 1
   -- then turn that to the way she really faces
@@ -350,8 +360,9 @@ local function loadProgress(version)
 end
 
 -- How many of each block she's put in place so far (they don't
--- need fetching any more): { version, counts = { [name] = n } },
--- or nil. In her report, so the tracker counts down the plan.
+-- need fetching any more): { version, counts = { [name] = n }, done },
+-- or nil. In her report, so the tracker counts down the plan, and
+-- knows when it's finished (then it's the next building's turn).
 function build.placed()
   if not fs.exists(PROGRESS_FILE) then
     return nil
@@ -362,7 +373,7 @@ function build.placed()
   if type(saved) ~= "table" or type(saved.placed) ~= "table" then
     return nil
   end
-  return { version = saved.version, counts = saved.placed }
+  return { version = saved.version, counts = saved.placed, done = saved.done == true }
 end
 
 -- Was she building when she stopped? (main.lua carries on.)
@@ -385,7 +396,7 @@ end
 -- The blocks of layer y: { x, z, name } in the order to place
 -- them (back and forth along x), or nil and why.
 local function layerCells(plan, y)
-  local layer, why = web.get("/plan/layer?y=" .. y)
+  local layer, why = web.get("/plan/layer?world=" .. textutils.urlEncode(require("world").get() or "") .. "&y=" .. y)
   if type(layer) ~= "table" or layer.version ~= plan.version or type(layer.runs) ~= "table" then
     return nil, "couldn't get layer " .. y .. ": " .. tostring(why or "the plan changed")
   end
@@ -681,6 +692,7 @@ function buildPlan(plan, box)
     saveProgress(progress)
   end
   progress.active = false
+  progress.done = true
   saveProgress(progress)
   goal = nil
   wants = nil
