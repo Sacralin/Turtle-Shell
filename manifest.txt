@@ -28,6 +28,7 @@ forester.lua
 woodcutter.lua
 chat.lua
 nojob.lua
+remote.lua
 gatherer.lua
 smelt.lua
 radar.lua

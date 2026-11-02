@@ -44,7 +44,8 @@
         "area.lua",
         "woodcutter.lua",
         "chat.lua",
-        "nojob.lua"
+        "nojob.lua",
+        "remote.lua"
       ]
     },
     {

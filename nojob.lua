@@ -18,11 +18,18 @@ local world = require("world")
 local screen = require("screen")
 
 local REPORT_EVERY = 30 -- seconds between reports
+local FAST_FOR = 120     -- seconds of quick reports after a remote command
+local FAST_EVERY = 2     -- seconds between them
+local fastUntil = nil
+local said = nil         -- what the last remote command did
 
 while true do
   -- (Set position, in another app, may have changed these meanwhile)
   require("position").reload()
-  web.setDoing("No job: just the apps")
+  if said and not (fastUntil and os.clock() < fastUntil) then
+    said = nil -- (a while after the last remote command: back to the usual)
+  end
+  web.setDoing(said or "No job: just the apps")
   local status
   if not web.isSetUp() then
     status = "not set up (run setweb)"
@@ -32,6 +39,15 @@ while true do
       status = tostring(result)
     else
       status = "connected"
+      -- moved from the tracker (Remote control: remote.lua checks it).
+      -- No work to pause here.
+      local remote = require("remote")
+      if remote.is(result) and result ~= "remote:pause" and result ~= "remote:resume" then
+        fastUntil = os.clock() + FAST_FOR
+        said = remote.run(result)
+        web.setDoing(said)
+        web.send(web.status()) -- (the tracker hears it now)
+      end
       -- a new job from the tracker (Change job): only one of the jobs
       local job = type(result) == "string" and result:match("^job(%a+)$")
       for _, name in ipairs(role.JOBS) do
@@ -52,5 +68,5 @@ while true do
   print("")
   print("Give me a job with Settings, or Change job")
   print("in the tracker.")
-  sleep(REPORT_EVERY)
+  sleep(fastUntil and os.clock() < fastUntil and FAST_EVERY or REPORT_EVERY)
 end

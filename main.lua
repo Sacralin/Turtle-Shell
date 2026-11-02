@@ -37,9 +37,16 @@ local busy = false
 local showStatus -- below
 
 
+local FAST_FOR = 120 -- seconds of quick reports after a remote command (Remote control)
+local FAST_EVERY = 2  -- seconds between them
+local fastUntil = nil
+
 local function keepReporting()
   while true do
     local wait = REPORT_EVERY
+    if fastUntil and os.clock() < fastUntil then
+      wait = FAST_EVERY
+    end
     if not web.isSetUp() then
       webStatus = "not set up"
     else
@@ -54,7 +61,14 @@ local function keepReporting()
         if report.map then
           require("worldmap").shared(report.map)
         end
-        if result then
+        local remote = require("remote")
+        if remote.is(result) then
+          fastUntil = os.clock() + FAST_FOR -- someone's at the controls: answer quickly
+        end
+        local paused = remote.pauseOrResume(result)
+        if paused then
+          web.setDoing(paused) -- (straight away: a paused turtle takes no commands)
+        elseif result then
           -- result is a command name; the job decides what to do
           orders.add(result)
         end
@@ -346,6 +360,14 @@ local function doJob()
         busy = false
         noteWhereWeAre()
         seconds = 0 -- show the result straight away
+      elseif turtle and require("remote").is(command) then
+        -- the tracker's Remote control (remote.lua: checked there)
+        busy = true
+        web.setDoing(require("remote").run(command))
+        busy = false
+        noteWhereWeAre()
+        seconds = 0
+        lastWork = os.clock() -- (its result stays shown a while)
       end
     else
       if turtle and seconds % SORT_EVERY == SORT_EVERY - 1 then
