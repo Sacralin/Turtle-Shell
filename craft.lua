@@ -83,6 +83,12 @@ local function carried()
   return total
 end
 
+-- The workbench containers above and below home: where things are
+-- set down while it crafts. Without them nothing's dropped.
+local function benches()
+  return warehouse.containerOn("up") and warehouse.containerOn("down")
+end
+
 -- Equip a tool from the inventory on the right (whatever was
 -- there comes off into the inventory). Returns true if it's on.
 local function onRight(names)
@@ -104,6 +110,9 @@ end
 local function batch(product, count)
   local from = craft.RECIPES[product]
   local wanted = math.min(BATCH, math.ceil(count / 4) * 4)
+  if not benches() then
+    return 0, "no workbench chests above and below me to craft with"
+  end
 
   -- fetch what it's made from (with the pickaxe on, to get about)
   local got = warehouse.fetch(from, wanted)
@@ -173,6 +182,9 @@ end
 local RING = { 1, 2, 3, 5, 7, 9, 10, 11 }
 
 function craft.furnace(stone)
+  if not benches() then
+    return false, "no workbench chests above and below me to craft with"
+  end
   if warehouse.fetch(stone, 8) < 8 then
     return false, "not enough " .. stone
   end
@@ -271,6 +283,9 @@ end
 -- Make BARRELS_AT_ONCE barrels from logName. Must be at home with
 -- the logs in its inventory. Returns how many it made, and why not.
 local function makeBarrels(logName)
+  if not benches() then
+    return 0, "no workbench chests above and below me to craft with"
+  end
   if not onRight(equipment.CRAFTING_TABLES) then
     return 0, "needs a crafting table to carry"
   end
@@ -330,13 +345,16 @@ local function makeBarrels(logName)
 end
 
 -- ================= a colony's first warehouse =================
--- Starting out there are no barrels at all, just the logs it's
--- carrying (the Woodcutter's). Making barrels needs somewhere to put
--- things while it crafts (the workbench above and below home), so the
--- first 2 are made with what's in the way set down on top of it (dropped
--- up, and picked up again after), and go above and below home as the
--- workbench. Then the usual way (makeBarrels) makes 4 more: the in and
--- out chests, and 2 spare.
+-- Starting out there are no barrels, just the logs it's carrying (the
+-- Woodcutter's) and the chest it was given to start with, which goes
+-- above home as the top of the workbench. Making barrels needs
+-- somewhere to put things while it crafts, so the first 2 are made with
+-- what's in the way set down in that chest (and picked up again after),
+-- and go below home and behind it (the in chest). Then the usual way
+-- (makeBarrels) makes 4 more: the out chest, and spares.
+--
+-- Never the open ground: what's dropped there scatters, and is gone in
+-- 5 minutes (a colony's first logs, its pickaxe).
 
 craft.FIRST_LOGS = 4 + LOGS_FOR_BARRELS -- 4 logs for the first 2 barrels, 8 for the next 4
 
@@ -352,9 +370,12 @@ local function logsCarried()
 end
 
 -- From 4 logs: 16 planks, 3 of them into 6 slabs, then 2 barrels (6
--- planks and 2 slabs each). Must be at home, nothing above it. Returns
--- how many it made, and why not.
+-- planks and 2 slabs each). Must be at home, a chest or barrel above it.
+-- Returns how many it made, and why not.
 local function firstTwoBarrels()
+  if not warehouse.containerOn("up") then
+    return 0, "no chest above me to set things down in"
+  end
   if not onRight(equipment.CRAFTING_TABLES) then
     return 0, "needs a crafting table to carry"
   end
@@ -367,6 +388,9 @@ local function firstTwoBarrels()
       turtle.dropUp()
     end
   end)
+  if carried() > 4 then
+    return 0, "couldn't set everything down (is the chest above me full?)"
+  end
   if logSlot ~= 1 then
     turtle.select(logSlot)
     turtle.transferTo(1)
@@ -422,12 +446,9 @@ function craft.startWarehouse()
     if logs < craft.FIRST_LOGS then
       return ("Starting the warehouse: needs %d logs to make its first barrels (has %d)"):format(craft.FIRST_LOGS, logs)
     end
-    -- room above it to set things down (natural ground's dug out)
-    local found, block = turtle.inspectUp()
-    if found and require("terrain").isNatural(block) then
-      turtle.digUp()
-    elseif found then
-      return "Starting the warehouse: " .. block.name .. " is above me (I need the space)"
+    -- somewhere to set things down while it crafts: the chest it was given
+    if not warehouse.containerOn("up") then
+      return "Starting the warehouse: needs a chest or barrel to set things down in while I craft (give it one)"
     end
     local made, why = firstTwoBarrels()
     craft.recover() -- what it set down comes back, and the pickaxe goes on

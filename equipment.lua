@@ -362,7 +362,8 @@ equipment.COMMON = {
 }
 
 local VALUABLE = { "_ore$", "^minecraft:raw_", "_ingot$", "_nugget$", "diamond", "emerald", "lapis", "redstone",
-  "quartz", "amethyst", "netherite", "_log$", "_wood$", "_sapling$", "_propagule$", "_planks$" }
+  "quartz", "amethyst", "netherite", "_log$", "_wood$", "_sapling$", "_propagule$", "_planks$",
+  "^minecraft:chest$", "^minecraft:barrel$" } -- (a chest: what a colony's first warehouse starts from)
 
 -- Is it worth keeping however full it is?
 function equipment.isValuable(name)

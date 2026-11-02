@@ -137,6 +137,14 @@ local function isContainer(found, block)
   return found and CONTAINERS[block.name] == true
 end
 
+-- Is there a chest or barrel on that side ("up", "down" or "front")?
+-- Nothing's dropped on a side without one: it would scatter on the
+-- ground, and be gone in 5 minutes.
+function warehouse.containerOn(side)
+  local inspect = side == "up" and turtle.inspectUp or side == "down" and turtle.inspectDown or turtle.inspect
+  return isContainer(inspect())
+end
+
 
 -- ================= the inventory =================
 
@@ -293,6 +301,9 @@ end
 -- Drop every slot we can into the container above or below
 -- (only items matching want(name)), then log what's in it now.
 local function dropInto(side, step, log, slots, want)
+  if not warehouse.containerOn(side) then
+    return
+  end
   local drop = side == "up" and turtle.dropUp or turtle.dropDown
   for slot, name in pairs(slots) do
     if want(name) then
@@ -640,7 +651,8 @@ function warehouse.fillOrders()
         turn.toFace((facing + 1) % 4)
         for slot = 1, 16 do
           local item = turtle.getItemDetail(slot)
-          if item and (item.name == name or (name == "minecraft:coal" and item.name == "minecraft:charcoal")) then
+          -- (no out chest there: it keeps it, and stores it again)
+          if item and (item.name == name or (name == "minecraft:coal" and item.name == "minecraft:charcoal")) and warehouse.containerOn("front") then
             turtle.select(slot)
             if turtle.drop() then
               moved = moved + item.count - turtle.getItemCount(slot)
