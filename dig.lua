@@ -398,7 +398,14 @@ function dig.work(now)
       break
     end
     local ok, deliverWhy = deliver()
-    if not ok then
+    if not ok and tostring(deliverWhy):find("^no warehouse") then
+      -- nowhere to take it yet: drop the least worth keeping, keeping enough to seal with
+      local keep = {}
+      for _, name in ipairs(SEAL) do keep[name] = KEEP_SEAL end
+      if not equipment.makeRoom(ROOM_NEEDED, keep) then
+        return "Stopped digging the hole: full of things worth keeping, and no warehouse to bring them to"
+      end
+    elseif not ok then
       return "Stopped digging the hole: " .. tostring(deliverWhy)
     end
     tell(state.task, {}) -- back to it (the walk goes back to where it was)

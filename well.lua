@@ -413,14 +413,25 @@ function well.work()
       end
       if emptySlots() < ROOM_NEEDED then
         local delivered, deliverWhy = deliver()
-        if not delivered then
+        if not delivered and deliverWhy:find("^no warehouse") then
+          -- nowhere to take it yet: drop the least worth keeping (stone,
+          -- dirt first), keeping enough to seal and build the rim with
+          local keep = {}
+          for _, name in ipairs(SEAL) do keep[name] = KEEP_SEAL end
+          for _, name in ipairs(RIM) do keep[name] = KEEP_SEAL end
+          if not equipment.makeRoom(ROOM_NEEDED, keep) then
+            result = "Stopped digging the well: full of things worth keeping, and no warehouse to bring them to"
+            break
+          end
+        elseif not delivered then
           result = "Stopped digging the well: " .. deliverWhy
           break
-        end
-        ok, why = travel.to(w.x, y + 1, w.z, function() return orders.has("home") end)
-        if not ok then
-          result = "Couldn't get back down the well: " .. tostring(why)
-          break
+        else
+          ok, why = travel.to(w.x, y + 1, w.z, function() return orders.has("home") end)
+          if not ok then
+            result = "Couldn't get back down the well: " .. tostring(why)
+            break
+          end
         end
       end
       web.setDoing(("Digging the well: down to y=%d (the bottom's y=%d)"):format(y, w.bottom))

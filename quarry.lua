@@ -291,6 +291,14 @@ local function hasRoom()
   if emptySlots() < ROOM_NEEDED and coalTrip then
     dropJunk()
   end
+  if emptySlots() < ROOM_NEEDED then
+    -- no warehouse to take it to yet: drop the least worth keeping
+    -- (stone, dirt first) and carry on, keeping what's worth something
+    local house = web.get("/warehouse?world=" .. textutils.urlEncode(require("world").get() or ""))
+    if type(house) ~= "table" or type(house.x) ~= "number" then
+      equipment.makeRoom(ROOM_NEEDED)
+    end
+  end
   return emptySlots() >= ROOM_NEEDED
 end
 

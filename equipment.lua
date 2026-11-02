@@ -341,4 +341,82 @@ function equipment.waitForNewItems()
 end
 
 
+
+-- ================= making room =================
+-- Full, and nowhere to take it (no warehouse yet): drop what's least
+-- worth keeping. First the common stuff that's everywhere (stone, dirt,
+-- gravel...), then, only if that's not enough, anything else that
+-- isn't worth keeping. Never tools, fuel, logs, saplings, or anything
+-- worth something (ores, ingots, gems).
+
+equipment.COMMON = {
+  ["minecraft:stone"] = true, ["minecraft:cobblestone"] = true, ["minecraft:deepslate"] = true,
+  ["minecraft:cobbled_deepslate"] = true, ["minecraft:dirt"] = true, ["minecraft:grass_block"] = true,
+  ["minecraft:coarse_dirt"] = true, ["minecraft:rooted_dirt"] = true, ["minecraft:gravel"] = true,
+  ["minecraft:sand"] = true, ["minecraft:red_sand"] = true, ["minecraft:granite"] = true,
+  ["minecraft:diorite"] = true, ["minecraft:andesite"] = true, ["minecraft:tuff"] = true,
+  ["minecraft:calcite"] = true, ["minecraft:netherrack"] = true, ["minecraft:dripstone_block"] = true,
+  ["minecraft:clay"] = true, ["minecraft:mud"] = true,
+  ["create:crimsite"] = true, ["create:asurine"] = true, ["create:ochrum"] = true, ["create:veridium"] = true,
+  ["create:limestone"] = true, ["create:scoria"] = true, ["create:scorchia"] = true,
+}
+
+local VALUABLE = { "_ore$", "^minecraft:raw_", "_ingot$", "_nugget$", "diamond", "emerald", "lapis", "redstone",
+  "quartz", "amethyst", "netherite", "_log$", "_wood$", "_sapling$", "_propagule$", "_planks$" }
+
+-- Is it worth keeping however full it is?
+function equipment.isValuable(name)
+  if equipment.FUEL_ITEMS[name] or equipment.isTool(name) then
+    return true
+  end
+  for _, pattern in ipairs(VALUABLE) do
+    if name:find(pattern) then
+      return true
+    end
+  end
+  return false
+end
+
+local function freeSlots()
+  local free = 0
+  for slot = 1, 16 do
+    if turtle.getItemCount(slot) == 0 then
+      free = free + 1
+    end
+  end
+  return free
+end
+
+-- Drop things until there are slotsWanted free slots. keep: { [name] =
+-- how many } the job needs kept whatever (blocks to seal caves with, say).
+-- drop: how to drop (turtle.dropUp, say: away from where it's digging).
+-- Returns true if there's room now.
+function equipment.makeRoom(slotsWanted, keep, drop)
+  keep = keep or {}
+  drop = drop or turtle.dropUp
+  for _, pass in ipairs({ "common", "uncommon" }) do
+    local kept = {}
+    for slot = 1, 16 do
+      if freeSlots() >= slotsWanted then
+        turtle.select(1)
+        return true
+      end
+      local item = turtle.getItemDetail(slot)
+      if item then
+        local name = item.name
+        local mayDrop = pass == "common" and equipment.COMMON[name]
+          or pass == "uncommon" and not equipment.COMMON[name] and not equipment.isValuable(name)
+        if keep[name] and (kept[name] or 0) < keep[name] then
+          kept[name] = (kept[name] or 0) + item.count -- (this lot's kept: what the job needs)
+        elseif mayDrop then
+          turtle.select(slot)
+          drop()
+        end
+      end
+    end
+  end
+  turtle.select(1)
+  return freeSlots() >= slotsWanted
+end
+
 return equipment
