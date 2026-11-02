@@ -257,6 +257,9 @@ local function idleWork()
     if result and result:find("^Setting up the warehouse") and result:find("needs a barrel") then
       -- no barrels to set it up with: a colony's first warehouse, from the logs it brought
       result = require("craft").startWarehouse()
+    elseif result and result:find("needs barrels or chests") then
+      -- full: more barrels first (from logs or planks, if there are any)
+      result = require("craft").barrels(true) or result
     end
     if not result and require("warehouse").topUpFuel() then
       result = "Topped up its fuel from the warehouse"

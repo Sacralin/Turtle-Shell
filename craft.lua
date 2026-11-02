@@ -231,6 +231,7 @@ end
 local SPARE_BARRELS = 4
 local BARRELS_AT_ONCE = 4
 local LOGS_FOR_BARRELS = 8
+local PLANKS_FOR_BARRELS = 4 * LOGS_FOR_BARRELS -- (or planks: 24 round the edges, 6 for the slabs)
 local BARREL_CHECK_EVERY = 60
 local SLAB_ROW = { 1, 2, 3 }
 local BARREL_PLANKS = { 1, 3, 5, 7, 9, 11 }
@@ -280,26 +281,42 @@ local function clearExcept(suffix)
   return true
 end
 
--- Make BARRELS_AT_ONCE barrels from logName. Must be at home with
--- the logs in its inventory. Returns how many it made, and why not.
-local function makeBarrels(logName)
+-- Make BARRELS_AT_ONCE barrels from the logs (or else planks) in its
+-- inventory: just LOGS_FOR_BARRELS of them; the rest are set aside
+-- below, and come back after (craft.recover). Must be at home.
+-- Returns how many it made, and why not.
+local function makeBarrels()
   if not benches() then
     return 0, "no workbench chests above and below me to craft with"
   end
   if not onRight(equipment.CRAFTING_TABLES) then
     return 0, "needs a crafting table to carry"
   end
-  -- 1. logs into planks: just the logs, in the first slot
-  if not clearExcept("_log") then
+  -- 1. logs into planks: one stack of logs, just what it needs of it,
+  -- in the first slot (planks it brought: just those)
+  local made = slotWith("_log") and "_log" or "_planks"
+  if not clearExcept(made) then
     return 0, "couldn't clear the inventory to craft"
   end
-  local logSlot = slotWith("_log")
-  turtle.select(logSlot)
-  if logSlot ~= 1 then
+  local first = slotWith(made)
+  each(function(slot)
+    if slot ~= first then
+      turtle.dropDown() -- (another stack: aside)
+    end
+  end)
+  turtle.select(first)
+  if first ~= 1 then
     turtle.transferTo(1)
   end
   turtle.select(1)
-  if not turtle.craft() then
+  local wanted = made == "_log" and LOGS_FOR_BARRELS or PLANKS_FOR_BARRELS
+  if turtle.getItemCount(1) > wanted then
+    turtle.dropDown(turtle.getItemCount(1) - wanted)
+  end
+  if turtle.getItemCount(1) < wanted then
+    return 0, "not enough " .. (made == "_log" and "logs" or "planks")
+  end
+  if made == "_log" and not turtle.craft(LOGS_FOR_BARRELS) then
     return 0, "couldn't make planks"
   end
   -- 2. planks into slabs: everything goes up, then 2 in each of a row
@@ -357,6 +374,17 @@ end
 -- 5 minutes (a colony's first logs, its pickaxe).
 
 craft.FIRST_LOGS = 4 + LOGS_FOR_BARRELS -- 4 logs for the first 2 barrels, 8 for the next 4
+
+local function countCarried(suffix)
+  local n = 0
+  for slot = 1, 16 do
+    local item = turtle.getItemDetail(slot)
+    if item and item.name:find(suffix .. "$") then
+      n = n + item.count
+    end
+  end
+  return n
+end
 
 local function logsCarried()
   local n = 0
@@ -440,8 +468,6 @@ end
 -- to start it with. Must be at home. Returns a sentence.
 function craft.startWarehouse()
   local logs = logsCarried()
-  local logSlot = slotWith("_log")
-  local logName = logSlot and turtle.getItemDetail(logSlot).name
   if containersCarried() == 0 then
     if logs < craft.FIRST_LOGS then
       return ("Starting the warehouse: needs %d logs to make its first barrels (has %d)"):format(craft.FIRST_LOGS, logs)
@@ -459,7 +485,7 @@ function craft.startWarehouse()
   -- the workbench (above and below home), then 4 more: the in and out chests
   warehouse.setUpChests()
   if containersCarried() < 2 and logsCarried() >= LOGS_FOR_BARRELS then
-    local made, why = makeBarrels(logName)
+    local made, why = makeBarrels()
     craft.recover()
     if made == 0 then
       return "Starting the warehouse: " .. tostring(why)
@@ -473,11 +499,12 @@ function craft.startWarehouse()
 end
 
 
--- Low on spare containers? Make barrels from logs in the warehouse.
--- Must be at home. Returns a sentence, or nil if there was nothing
--- to do.
-function craft.barrels()
-  if lastBarrelCheck and os.clock() - lastBarrelCheck < BARREL_CHECK_EVERY then
+-- Low on spare containers? Make barrels from logs (or planks) it's
+-- carrying or has stored. Looks every BARREL_CHECK_EVERY, or now (the
+-- warehouse is full). Must be at home. Returns a sentence, or nil if
+-- there was nothing to do.
+function craft.barrels(now)
+  if not now and lastBarrelCheck and os.clock() - lastBarrelCheck < BARREL_CHECK_EVERY then
     return nil
   end
   lastBarrelCheck = os.clock()
@@ -485,25 +512,46 @@ function craft.barrels()
   if spare >= SPARE_BARRELS then
     return nil
   end
-  local best, most = nil, 0
-  for name, count in pairs(warehouse.summary()) do
-    if isLog(name) and count > most then
-      best, most = name, count
+  -- what to make them from: logs (or planks) it's carrying (just taken
+  -- from the in chest, say), else from storage
+  local from
+  if logsCarried() >= LOGS_FOR_BARRELS then
+    from = LOGS_FOR_BARRELS .. " logs"
+  elseif countCarried("_planks") >= PLANKS_FOR_BARRELS then
+    from = PLANKS_FOR_BARRELS .. " planks"
+  else
+    local log, logs, plank, planks = nil, 0, nil, 0
+    for name, count in pairs(warehouse.summary()) do
+      if isLog(name) and count > logs then
+        log, logs = name, count
+      elseif name:find("_planks$") and count > planks then
+        plank, planks = name, count
+      end
+    end
+    if log and logs >= LOGS_FOR_BARRELS then
+      from = LOGS_FOR_BARRELS .. " " .. log:gsub("^minecraft:", "")
+      if warehouse.fetch(log, LOGS_FOR_BARRELS) < LOGS_FOR_BARRELS then
+        warehouse.store()
+        return "Couldn't fetch the logs to make barrels"
+      end
+    elseif plank and planks >= PLANKS_FOR_BARRELS then
+      from = PLANKS_FOR_BARRELS .. " " .. plank:gsub("^minecraft:", "")
+      if warehouse.fetch(plank, PLANKS_FOR_BARRELS) < PLANKS_FOR_BARRELS then
+        warehouse.store()
+        return "Couldn't fetch the planks to make barrels"
+      end
+    else
+      return ("Running low on barrels (%d spare), and there aren't %d logs (or %d planks) to make more"):format(
+        spare, LOGS_FOR_BARRELS, PLANKS_FOR_BARRELS)
     end
   end
-  if not best or most < LOGS_FOR_BARRELS then
-    return ("Running low on barrels (%d spare), and there aren't %d logs to make more"):format(spare, LOGS_FOR_BARRELS)
-  end
-  if warehouse.fetch(best, LOGS_FOR_BARRELS) < LOGS_FOR_BARRELS then
-    warehouse.store()
-    return "Couldn't fetch the logs to make barrels"
-  end
-  local made, why = makeBarrels(best)
-  craft.recover() -- the barrels and anything left over come back
-  -- burn the odd planks and slabs, rather than store them
+  local made, why = makeBarrels()
+  craft.recover() -- the barrels and anything set aside come back
+  -- burn the odd planks and slabs left over, rather than store them
+  -- (a stack of planks it brought is kept: more barrels)
   for slot = 1, 16 do
     local item = turtle.getItemDetail(slot)
-    if item and (item.name:find("_planks$") or item.name:find("_slab$")) then
+    if item and (item.name:find("_slab$") or (item.name:find("_planks$") and countCarried("_planks") < PLANKS_FOR_BARRELS)) then
       turtle.select(slot)
       turtle.refuel()
     end
@@ -511,7 +559,7 @@ function craft.barrels()
   turtle.select(1)
   warehouse.store()
   lastBarrelCheck = nil -- made some: look again next time
-  local result = ("Made %d barrels from %d %s (now %d spare)"):format(made, LOGS_FOR_BARRELS, best:gsub("^minecraft:", ""), containersCarried())
+  local result = ("Made %d barrels from %s (now %d spare)"):format(made, from, containersCarried())
   if why then
     result = result .. ": " .. why
   end
