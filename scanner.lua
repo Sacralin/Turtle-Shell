@@ -464,97 +464,100 @@ local function survey()
   return #said > 0 and ("Surveyed " .. table.concat(said, ", ")) or nil
 end
 
--- ================= exploring without a Geo Scanner =================
--- Without a scanner it only sees the blocks next to it: in front,
--- above and below after every move (move.lua), and all round at each
--- cube it stops in. So it goes cube to cube through open space,
--- nearest first (deep down for preference), as with a scanner. At
--- each stop it drops to the floor (at most a cube's height: it's the
--- ground and the caves worth mapping, not the sky), looks round,
--- marks the cube visited (as a scan would) and offers the cubes next
--- to it as places to go: the four round it at its height, the one
--- below if it's open below, and the one above only underground. A
--- cube on the surface it can't get to is likely in a hill, so then
--- the cube above it is offered: it climbs over.
+-- ================= without a Geo Scanner: sweeping the ground =================
+-- A turtle only sees the blocks touching it, so without a scanner it
+-- maps the ground by going over it: a block above the ground, column
+-- by column, in a square spiral out from home (so what's near home is
+-- done first, and each column is next to the last). Every move notes
+-- what's below, ahead and above (move.lua), so each column's ground
+-- goes on the map. It follows the land: up over what's in its way
+-- (never digging, at most CLIMB), then down while there's air below
+-- (at most DROP). A column it can't get to (a cliff too high, past its
+-- heights) is skipped. Its place in the spiral is kept (explore.json,
+-- "sweep"), so a restart carries on where it was. Swept to the edge of
+-- its radius: it rests, and after RESWEEP_AFTER starts again from
+-- home, to keep the map up to date. (It can't see underground: that
+-- takes a Geo Scanner, or a turtle that's been there.)
 
-local SAW = "Exploring (no Geo Scanner: looking as it flies)"
+local SWEEP_STEPS = 64       -- columns in one turn of work, at most (then it says how it's doing)
+local CLIMB = 12             -- blocks it goes up to get over something, at most
+local DROP = 24              -- blocks it goes down to find the ground, at most
+local RESWEEP_AFTER = 6 * 60 * 60 * 1000 -- milliseconds before it sweeps it all again
 
--- Note what's all round it, above and below (air for nothing).
--- Returns whether it's open above, and below.
-local function lookRound()
-  local turn = require("turn")
-  for _ = 1, 4 do
-    local found, block = turtle.inspect()
-    local fx, fy, fz = position.inFront()
-    sightings.saw(found and block or nil, fx, fy, fz)
-    turn.right()
+-- how x and z change moving forward, for each facing (see position.lua)
+local STEP_X = { [0] = 0, [1] = 1, [2] = 0, [3] = -1 }
+local STEP_Z = { [0] = -1, [1] = 0, [2] = 1, [3] = 0 }
+
+-- Where it's got to in the spiral: n columns done; x, z the next one
+-- (from home); the leg it's on (dir, leg long, inLeg along it, legs
+-- done); done = when it finished.
+local function sweepState()
+  local map = loadMap()
+  if type(map.sweep) ~= "table" then
+    map.sweep = { n = 0, x = 0, z = 0, dir = 1, leg = 1, inLeg = 0, legs = 0 }
   end
-  local x, y, z = position.get()
-  local foundUp, up = turtle.inspectUp()
-  sightings.saw(foundUp and up or nil, x, y + 1, z)
-  local foundDown, down = turtle.inspectDown()
-  sightings.saw(foundDown and down or nil, x, y - 1, z)
-  return not foundUp, not foundDown
+  return map.sweep
 end
 
--- Down to the floor, never more than a cube's height, nor below its limits.
-local function settle()
+-- On to the next column: legs of 1, 1, 2, 2, 3, 3... going east,
+-- south, west, north.
+local function nextColumn(state)
+  state.x, state.z = state.x + STEP_X[state.dir], state.z + STEP_Z[state.dir]
+  state.inLeg = state.inLeg + 1
+  if state.inLeg == state.leg then
+    state.inLeg = 0
+    state.dir = (state.dir + 1) % 4
+    state.legs = state.legs + 1
+    if state.legs % 2 == 0 then
+      state.leg = state.leg + 1
+    end
+  end
+  state.n = state.n + 1
+end
+
+-- Down while there's air below (at most DROP, never below its limits).
+local function toTheGround()
   local move = require("move")
   local zone = limits or defaults()
-  for _ = 1, CUBE - 1 do
+  for _ = 1, DROP do
     local _, y = position.get()
-    if (zone.minY and y - 1 < zone.minY) or turtle.detectDown() or not move.down() then
+    if turtle.detectDown() or (zone.minY and y - 1 < zone.minY) or not move.down() then
       return
     end
   end
 end
 
--- A place to go in the cube x, y, z is in, if it's within its limits
--- and the cube's new to it.
-local function offer(x, y, z)
-  local c = loadMap()[cubeOf(x, y, z)]
-  if inZone(x, y, z) and not (c and (c.t or c.u or c.spot)) then
-    cube(cubeOf(x, y, z)).spot = x .. "," .. y .. "," .. z
-  end
-end
-
--- Visited (and where it's settled): look round, mark it, and offer
--- the cubes next to it. target: the cube it went for, if any.
-local function visit(target)
-  settle()
-  local openUp, openDown = lookRound()
+-- To the column tx, tz, a block above the ground. Next door: forward,
+-- up over what's in the way first. Further (after a skip, or a
+-- restart): flying there by its usual route. Returns true if it got there.
+local function toColumn(tx, tz)
+  local move, turn = require("move"), require("turn")
+  local zone = limits or defaults()
   local x, y, z = position.get()
-  if target and target.key ~= cubeOf(x, y, z) then
-    scanned(target.key) -- (it dropped into the cube below)
+  if x == tx and z == tz then
+    toTheGround()
+    local found, block = turtle.inspectDown() -- (no move to note it: it was here already)
+    local _, gy = position.get()
+    sightings.saw(found and block or nil, x, gy - 1, z)
+    return true
   end
-  scanned(cubeOf(x, y, z), x, y, z)
-  local cx, cy, cz = math.floor(x / CUBE), math.floor(y / CUBE), math.floor(z / CUBE)
-  for _, side in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
-    offer((cx + side[1]) * CUBE + MIDDLE, y, (cz + side[2]) * CUBE + MIDDLE)
-  end
-  if openDown then
-    offer(x, (cy - 1) * CUBE + MIDDLE, z)
-  end
-  if openUp and y < DEEP_BELOW then
-    offer(x, (cy + 1) * CUBE + MIDDLE, z)
-  end
-  saveMap()
-  return x, y, z
-end
-
--- "cube 12 of 40": cubes visited, of those it knows of, within its limits.
-local function progress()
-  local visited, known = 0, 0
-  for _, c in pairs(loadMap()) do
-    local sx, sy, sz = spotOf(c)
-    if sx and inZone(sx, sy, sz) and (c.t or not c.u) then
-      known = known + 1
-      if c.t then
-        visited = visited + 1
-      end
+  if math.abs(tx - x) + math.abs(tz - z) > 1 then
+    if not travel.to(tx, y, tz) then
+      return false
     end
+    toTheGround()
+    return true
   end
-  return ("cube %d of %d"):format(visited, known)
+  turn.toFace(tx > x and 1 or tx < x and 3 or tz > z and 2 or 0)
+  local climbed = 0
+  while not move.forward() do
+    if climbed >= CLIMB or (zone.maxY and y + 1 > zone.maxY) or not move.up() then
+      return false
+    end
+    climbed, y = climbed + 1, y + 1
+  end
+  toTheGround()
+  return true
 end
 
 local function zoneSentence()
@@ -563,35 +566,37 @@ local function zoneSentence()
   return ("Its whole zone (%d blocks round home%s) is explored and up to date"):format(zone.radius, heights)
 end
 
--- Explore without a scanner: a sentence, and its state.
+-- Sweep without a scanner: a sentence, and its state.
 local function explore()
-  local x, y, z = position.get()
-  local here = loadMap()[cubeOf(x, y, z)]
-  if inZone(x, y, z) and (not here or not here.t or os.epoch("utc") - here.t > RESCAN_AFTER) then
-    x, y, z = visit(nil)
-    return ("%s: %s, looked round %d %d %d"):format(SAW, progress(), x, y, z), "working"
-  end
-  learnDeep()
-  local target, doing = nextFrontier(), SAW
-  if not target then
-    target, doing = stalest(), "Refreshing the map (no Geo Scanner: looking as it flies)"
-  end
-  if not target then
-    lastRound = os.clock()
-    return zoneSentence(), "idle"
-  end
-  web.setDoing(("%s: %s, heading for %d %d %d"):format(doing, progress(), target.x, target.y, target.z), "working")
-  local ok, travelWhy = travel.to(target.x, target.y, target.z)
-  if not ok then
-    cube(target.key).u = true -- no way there it could find (it never digs)
-    if target.y >= DEEP_BELOW then
-      offer(target.x, target.y + CUBE, target.z) -- likely a hill: over the top
+  local zone = limits or defaults()
+  local total = (2 * zone.radius + 1) ^ 2
+  local state = sweepState()
+  if state.done then
+    if os.epoch("utc") - state.done < RESWEEP_AFTER then
+      lastRound = os.clock()
+      return zoneSentence(), "idle"
     end
-    saveMap()
-    return ("Couldn't find a way to %d %d %d (%s): trying elsewhere"):format(target.x, target.y, target.z, tostring(travelWhy)), "working"
+    loadMap().sweep = nil -- time to go over it again, from home
+    state = sweepState()
   end
-  x, y, z = visit(target)
-  return ("%s: %s, looked round %d %d %d"):format(doing, progress(), x, y, z), "working"
+  local hx, _, hz = position.home()
+  local orders = require("orders")
+  for _ = 1, SWEEP_STEPS do
+    if state.n >= total then
+      state.done = os.epoch("utc")
+      saveMap()
+      lastRound = os.clock()
+      return zoneSentence(), "idle"
+    end
+    if orders.has("home") then
+      break
+    end
+    toColumn(hx + state.x, hz + state.z) -- (one it can't get to is skipped)
+    nextColumn(state)
+  end
+  saveMap()
+  return ("Sweeping the ground (no Geo Scanner): %d of %d columns, %d blocks out from home"):format(
+    state.n, total, math.max(math.abs(state.x), math.abs(state.z))), "working"
 end
 
 
