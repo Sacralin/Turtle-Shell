@@ -117,7 +117,7 @@ local function sensible(got)
     return nil
   end
   local radius, minY, maxY = got.radius, got.minY, got.maxY
-  if type(radius) ~= "number" or radius < 8 or radius > 2000 then
+  if type(radius) ~= "number" or radius < 8 or radius > 10000 then
     return nil
   end
   if minY == nil and maxY == nil then
@@ -158,6 +158,7 @@ end
 -- spot = "x,y,z" somewhere it could stand, u = true if unreachable }
 
 local explored = nil
+local newSpots = {} -- cubes whose spot it's learnt, to tell the tracker: key -> { "x,y,z", d }
 
 local function loadMap()
   if explored then
@@ -236,6 +237,7 @@ local function learn(found, x, y, z)
     local c = cube(key)
     if not c.spot or c.u or (c.d or math.huge) > found.distance then
       c.spot, c.d, c.u = found.spot, found.distance, nil -- a better place to scan it from
+      newSpots[key] = { c.spot, c.d }
     end
   end
   saveMap()
@@ -243,34 +245,68 @@ end
 
 -- A cube has been scanned (from its spot, or from where it stood).
 -- ---- working together (see the top) ----
-local shared = { at = nil, claimed = {} } -- when last swapped; cubes others have claimed
+-- The tracker keeps every cube, for every Explorer; this one keeps only
+-- those within KEEP of itself (its disk is small), plus the places the
+-- tracker's said to go next, and asks for the rest as it goes.
+local KEEP = 150                          -- blocks round it whose cubes it keeps
+local shared = { at = nil, claimed = {}, wanted = {} } -- when last swapped; others' claims; the tracker's places to go
 local finished = nil                      -- cubes done, to tell the tracker (nil: not started)
 local SEND_AT_ONCE = 400                  -- of them in one go, at most
+
+-- Forget cubes far from here that the tracker has (it says what's
+-- near, and where to go, each time).
+local function forgetFar()
+  local x, _, z = position.get()
+  local map = loadMap()
+  for key, c in pairs(map) do
+    local cx, cz = key:match("^(%-?%d+),%-?%d+,(%-?%d+)$")
+    cx, cz = tonumber(cx), tonumber(cz)
+    if cx and not finished[key] and not newSpots[key] and not shared.wanted[key]
+        and math.max(math.abs(cx * CUBE + MIDDLE - x), math.abs(cz * CUBE + MIDDLE - z)) > KEEP then
+      map[key] = nil
+    end
+  end
+end
 
 -- Swap with the tracker (and claim a cube, if given). Returns the
 -- tracker's answer, or nil if it didn't answer.
 local function share(claim)
   local hx, _, hz = position.home()
+  local x, _, z = position.get()
   if not finished then
     -- just started: everything it's done before, so the others know too
     finished = {}
     for key, c in pairs(loadMap()) do
-      if c.t and not c.u then
-        finished[key] = true
+      if not c.u and key:match("^%-?%d+,%-?%d+,%-?%d+$") then
+        if c.t then
+          finished[key] = true
+        end
+        if c.spot then
+          newSpots[key] = { c.spot, c.d or 0 } -- (done or not: where to stand for it)
+        end
       end
     end
   end
-  local list = {}
+  local list, spots, n = {}, {}, 0
   for key in pairs(finished) do
     if #list >= SEND_AT_ONCE then
       break -- (the rest next time)
     end
     list[#list + 1] = key
   end
+  local sent = {}
+  for key, spot in pairs(newSpots) do
+    if n >= SEND_AT_ONCE then
+      break
+    end
+    spots[key], n = spot, n + 1
+    sent[#sent + 1] = key
+  end
   local got = web.post("/explore/share", {
     world = require("world").get() or "", id = os.getComputerID(),
-    x = hx or 0, z = hz or 0, range = (limits or defaults()).radius,
-    done = #list > 0 and list or textutils.empty_json_array, claim = claim,
+    x = x or 0, z = z or 0, hx = hx or 0, hz = hz or 0,
+    done = #list > 0 and list or textutils.empty_json_array,
+    spots = n > 0 and spots or nil, claim = claim,
   })
   if type(got) ~= "table" then
     return nil
@@ -278,20 +314,48 @@ local function share(claim)
   for _, key in ipairs(list) do
     finished[key] = nil -- (the tracker has them)
   end
+  for _, key in ipairs(sent) do
+    newSpots[key] = nil
+  end
   shared.at = os.clock()
-  local map, changed = loadMap(), false
+  local map = loadMap()
+  local function isCube(key)
+    return type(key) == "string" and key:match("^%-?%d+,%-?%d+,%-?%d+$") ~= nil
+  end
+  local function isSpot(spot)
+    return type(spot) == "string" and spot:match("^%-?%d+,%-?%d+,%-?%d+$") ~= nil
+  end
+  -- done (by anyone), near here
   for key, when in pairs(type(got.scanned) == "table" and got.scanned or {}) do
-    if type(key) == "string" and type(when) == "number" and key:match("^%-?%d+,%-?%d+,%-?%d+$") then
+    if isCube(key) and type(when) == "number" then
       local c = map[key]
       if not c or not c.t or c.t < when then
         map[key] = c or {}
         map[key].t = when -- (another Explorer's done it: done)
-        changed = true
       end
     end
   end
-  if changed then
-    saveMap()
+  -- where to go next, and what's due a refresh (the tracker's whole map)
+  shared.wanted = {}
+  for key, spot in pairs(type(got.frontier) == "table" and got.frontier or {}) do
+    if isCube(key) and isSpot(spot) then
+      local c = map[key]
+      if not c then
+        map[key] = { spot = spot }
+      elseif not c.t and not c.spot then
+        c.spot = spot
+      end
+      shared.wanted[key] = true
+    end
+  end
+  for key, s in pairs(type(got.stale) == "table" and got.stale or {}) do
+    if isCube(key) and type(s) == "table" and isSpot(s[1]) and type(s[2]) == "number" then
+      local c = map[key] or {}
+      map[key] = c
+      c.spot = c.spot or s[1]
+      c.t = math.max(c.t or 0, s[2])
+      shared.wanted[key] = true
+    end
   end
   shared.claimed = {}
   for _, key in ipairs(type(got.claimed) == "table" and got.claimed or {}) do
@@ -299,6 +363,8 @@ local function share(claim)
       shared.claimed[key] = true
     end
   end
+  forgetFar()
+  saveMap()
   return got
 end
 
@@ -316,6 +382,9 @@ local function scanned(key, x, y, z)
   c.t = os.epoch("utc")
   if x then
     c.spot = x .. "," .. y .. "," .. z -- it stood here: it can come back
+  end
+  if c.spot then
+    newSpots[key] = { c.spot, c.d or 0 }
   end
   c.u = nil
   saveMap()
@@ -709,6 +778,8 @@ function scanner.work()
     end
   end
 
+  shareNow() -- (with the other Explorers, through the tracker)
+
   -- wherever it is: scan if it never has here, or not for a while
   local x, y, z = position.get()
   local here = loadMap()[cubeOf(x, y, z)]
@@ -736,7 +807,6 @@ function scanner.work()
   -- down for preference); with none left, the part of its zone
   -- scanned longest ago
   learnDeep()
-  shareNow()
   local target, doing
   local taken = 0
   for _ = 1, CLAIM_TRIES do
