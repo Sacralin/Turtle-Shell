@@ -357,17 +357,28 @@ local function finishLadder(w)
   return ("Put the well's ladder in down to y=%d"):format(lowest)
 end
 
+-- Why well.work last had nothing to do: a sentence, or nil.
+local idle = nil
+function well.idleWhy()
+  return idle
+end
+
 -- Work on the well, if it isn't finished. Returns a sentence, or nil
--- when there's nothing to do (finished, or no well yet).
+-- when there's nothing to do (finished, or no well yet: well.idleWhy
+-- says which).
 function well.work()
   local w = info()
   if not w or well.isDone(w) then
     wanted = nil
+    idle = not w and "there's no well yet (the tracker hasn't chosen its spot)"
+      or "the well's finished, and there's nothing to build (give me a building in the tracker's Build tab)"
     return nil
   end
   if orders.has("home") then
+    idle = "told to stay home"
     return nil
   end
+  idle = nil
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(worldName()))
   local fuelled, fuelWhy = equipment.topUp(house)
   if not fuelled then
@@ -391,6 +402,7 @@ function well.work()
     end
     w = info() -- clear: carry on with it
     if not w or w.check then
+      idle = "waiting for the tracker to OK the well's spot"
       return nil
     end
   end

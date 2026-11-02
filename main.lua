@@ -215,7 +215,7 @@ end
 local SORT_EVERY = 10 -- seconds
 
 local lastWork = os.clock()
-local lastResume = os.clock()
+local lastResume = os.clock() - RESUME_EVERY -- (the first look is straight away)
 
 local function idleWork()
   local result = nil
@@ -276,7 +276,15 @@ local function idleWork()
     -- nothing to do for a while: say so, rather than show what it did
     -- last (so the tracker doesn't think it's stuck on that). But a
     -- Miner that's stopped or waiting says why, so it gets looked at.
-    local why = role.get() == "Miner" and require("quarry").stoppedWhy()
+    -- (it starts "Ready, nothing to do": the tracker counts that as between jobs)
+    local why = nil
+    if role.get() == "Miner" then
+      why = require("quarry").stoppedWhy()
+    elseif role.get() == "Builder" and require("well").idleWhy() then
+      why = "Ready, nothing to do: " .. require("well").idleWhy()
+    elseif role.get() == "Crafter" then
+      why = "Ready, nothing to do: the warehouse is sorted, and nobody's asked for anything"
+    end
     local quiet = why or "Ready, nothing to do yet"
     if web.status().doing ~= quiet then
       web.setDoing(quiet)
