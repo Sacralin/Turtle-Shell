@@ -20,6 +20,16 @@ if not answer or answer:lower():sub(1, 1) ~= "y" then
   return
 end
 
+-- No job: there's no work to restart into (it's that that asks), so
+-- ask here and now. (It moves a little to check: a bit of fuel.)
+local hasRole, role = pcall(require, "role")
+if hasRole and type(role) == "table" and role.get() == role.NONE then
+  require("position").forget()
+  require("locate").run()
+  print("Done: I know where I am now.")
+  return
+end
+
 -- The work runs alongside this (BitDriven OS), remembering where it
 -- thinks it is: hold it still first, or it saves that straight back
 -- over what's forgotten here. Once it's finished any move it's in.
