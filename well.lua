@@ -380,7 +380,7 @@ function well.work()
   end
   idle = nil
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(worldName()))
-  local fuelled, fuelWhy = equipment.topUp(house)
+  local fuelled, fuelWhy = equipment.topUp(house, true) -- (the well turns up coal)
   if not fuelled then
     return "Waiting to dig the well: " .. tostring(fuelWhy)
   end

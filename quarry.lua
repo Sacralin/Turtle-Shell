@@ -741,7 +741,7 @@ end
 -- Keep the tank full from the warehouse (equipment.topUp). Returns
 -- true if it can work, or false and what it's waiting for.
 local function fuelUp(house)
-  local ok, why = equipment.topUp(house)
+  local ok, why = equipment.topUp(house, true) -- (it digs up coal itself)
   wants = equipment.fuelWanted()
   return ok, why
 end

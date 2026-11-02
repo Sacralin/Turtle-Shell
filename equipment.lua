@@ -161,9 +161,13 @@ end
 -- out chest) go and get it. Its job carries on meanwhile; only
 -- below the low point (lowOnFuel) does it go for fuel straight away
 -- and stop working until it has some. house: the warehouse (from
--- the tracker), for where the out chest is. Returns true if it can
+-- the tracker), for where the out chest is. findsFuel: the job turns
+-- up coal itself (digging the well, a Miner): below the low point it
+-- still fetches what the warehouse has, but carries on working (its
+-- own check says if there's enough for the trip), since waiting on a
+-- warehouse with no coal would never end. Returns true if it can
 -- work, or false and why not.
-function equipment.topUp(house)
+function equipment.topUp(house, findsFuel)
   if not equipment.belowFill() then
     wanted, wantedSince = nil, nil
     return true
@@ -194,7 +198,7 @@ function equipment.topUp(house)
       wanted, wantedSince = nil, nil
     end
   end
-  if equipment.lowOnFuel() then
+  if equipment.lowOnFuel() and not findsFuel then
     return false, ("low on fuel: asked the warehouse for %d"):format(need)
   end
   return true
