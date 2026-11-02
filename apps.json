@@ -45,7 +45,8 @@
         "woodcutter.lua",
         "chat.lua",
         "nojob.lua",
-        "remote.lua"
+        "remote.lua",
+        "players.lua"
       ]
     },
     {

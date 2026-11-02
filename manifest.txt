@@ -29,6 +29,7 @@ woodcutter.lua
 chat.lua
 nojob.lua
 remote.lua
+players.lua
 gatherer.lua
 smelt.lua
 radar.lua

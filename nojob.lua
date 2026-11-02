@@ -72,5 +72,5 @@ while true do
   print("")
   print("Give me a job with Settings, or Change job")
   print("in the tracker.")
-  sleep(fastUntil and os.clock() < fastUntil and FAST_EVERY or REPORT_EVERY)
+  require("players").untilNextReport(fastUntil and os.clock() < fastUntil and FAST_EVERY or REPORT_EVERY) -- (sooner when someone comes or goes)
 end

@@ -82,7 +82,7 @@ local function keepReporting()
     if busy then
       showStatus()
     end
-    sleep(wait)
+    require("players").untilNextReport(wait) -- (sooner when someone comes or goes)
   end
 end
 

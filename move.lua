@@ -13,35 +13,58 @@ local worldmap = require("worldmap")
 local move = {}
 
 
--- Paused (the Pause work app sets _G.EMPIRE_PAUSED): every move comes
--- through here, so it stops before the next one and waits, wherever
--- it's got to, saying so, till it's let go on.
+-- Paused (the Pause work app sets _G.EMPIRE_PAUSED), or held (the
+-- tracker's reply says to wait: a player's near, with Avoid players
+-- on, so it doesn't dig or build into them or their things; web.lua
+-- sets _G.EMPIRE_HOLD): every move comes through here, so it stops
+-- before the next one and waits, wherever it's got to, saying so, till
+-- it's let go on. A hold ends with a report that doesn't say to wait.
 --
 -- It's the work that's paused, not you: the tracker's Remote control
 -- still moves it meanwhile (remote.lua), and those moves don't wait
 -- (_G.EMPIRE_REMOTE).
+local function held()
+  return _G.EMPIRE_PAUSED or _G.EMPIRE_HOLD
+end
+
+-- What it says while it waits, and its state.
+local function waiting(was)
+  local tail = was and (": was " .. was) or ""
+  if _G.EMPIRE_PAUSED then
+    return "Paused (Pause work, on the turtle)" .. tail, "paused"
+  end
+  return "Waiting: " .. tostring(_G.EMPIRE_HOLD) .. tail, "waiting", "player_near"
+end
+
 function move.waitWhilePaused()
-  if not _G.EMPIRE_PAUSED or _G.EMPIRE_REMOTE then
+  if not held() or _G.EMPIRE_REMOTE then
     return
   end
   local web = require("web")
   local was = web.doing()
   local wasState, wasReason = web.state()
-  local paused = "Paused (Pause work, on the turtle)" .. ((was and not was:find("^Paused")) and (": was " .. was) or "")
-  web.setDoing(paused, "paused")
-  while _G.EMPIRE_PAUSED do
+  if (was and was:find("^Paused")) or wasReason == "player_near" then
+    was = nil -- (already waiting, before a restart: nothing of its own to go back to)
+  end
+  web.setDoing(waiting(was))
+  while held() do
     local remote = require("remote")
     local command = require("orders").takeFirst(remote.is)
     if command then
       _G.EMPIRE_REMOTE = true
       local ok, said = pcall(remote.run, command)
       _G.EMPIRE_REMOTE = false
-      web.setDoing("Paused, moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))), "paused")
+      web.setDoing((_G.EMPIRE_PAUSED and "Paused" or "Waiting") .. ", moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))),
+        _G.EMPIRE_PAUSED and "paused" or "waiting", not _G.EMPIRE_PAUSED and "player_near" or nil)
     else
+      local saying, state, why = waiting(was)
+      if saying ~= web.doing() and not (web.doing() or ""):find(", moved by hand: ") then
+        web.setDoing(saying, state, why) -- (paused while held, or the other way round)
+      end
       sleep(1)
     end
   end
-  if was and not was:find("^Paused") then
+  if was then
     web.setDoing(was, wasState, wasReason) -- (as it was: its state too)
   else
     web.setDoing("Ready, nothing to do yet", "idle")

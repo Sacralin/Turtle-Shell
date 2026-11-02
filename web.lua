@@ -107,6 +107,7 @@ web.STATES = { working = true, waiting = true, blocked = true, idle = true, need
 web.REASONS = {
   no_fuel = true, no_chest = true, no_warehouse = true, no_logs = true, no_route = true, full = true,
   lost = true, in_the_way = true, no_tool = true, needs_items = true, not_set_up = true, crashed = true,
+  player_near = true, -- (held by the tracker: Avoid players)
 }
 
 -- The words that give each state, tried in this order on the sentence
@@ -324,6 +325,9 @@ function web.status()
     end
   end
 
+  -- who's on the server, with a Player Detector (players.lua)
+  report.players = require("players").report()
+
   -- what's attached, by side: { left = "chunky", ... }
   -- (handy for working out why something isn't being found)
   report.peripherals = {}
@@ -349,9 +353,15 @@ function web.send(report)
   local reply = response.readAll()
   response.close()
 
-  -- a reply like {"command":"home"}; anything else means no command
+  -- a reply like {"command":"home"}; anything else means no command.
+  -- It can say too: "hold" (why to wait before moving on: a player's
+  -- near, with Avoid players on; see move.lua), and "players" (what a
+  -- turtle with a Player Detector should send: players.lua)
   local ok, parsed = pcall(textutils.unserializeJSON, reply or "")
-  if ok and type(parsed) == "table" and type(parsed.command) == "string" then
+  parsed = ok and type(parsed) == "table" and parsed or {}
+  _G.EMPIRE_HOLD = type(parsed.hold) == "string" and parsed.hold ~= "" and parsed.hold:sub(1, 100) or nil
+  require("players").told(parsed.players)
+  if type(parsed.command) == "string" then
     return true, parsed.command
   end
   return true, nil
