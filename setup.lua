@@ -108,6 +108,20 @@ local function checkNotMoved()
   if not position.isSet() then
     return
   end
+  -- with a Geo Scanner: its fingerprint says where it is, here or not
+  local x, y, z, facing = position.get()
+  local scanned, sx, sy, sz, sFacing = require("locate").byScan({ x, y, z })
+  if scanned then
+    if sx ~= x or sy ~= y or sz ~= z or sFacing ~= facing then
+      screen.header(role.get())
+      print("I've been moved: I found where I am by scanning.")
+      print(("Now at %d %d %d."):format(sx, sy, sz))
+      sleep(2)
+    end
+    position.moveTo(sx, sy, sz, sFacing)
+    position.noteSurroundings()
+    return
+  end
   local here, what = position.stillHere()
   local ok, verdict, why = pcall(askTheMap) -- (never stops it starting: the old check, if it fails)
   if not ok then
@@ -359,19 +373,34 @@ function setup.run()
     print("I wasn't moved after all: carrying on.")
   end
   if not position.isSet() then
-    -- on its own first (looking round, the tracker matching it to
-    -- the map); then with you. Straight to you if you said so
-    -- (setpos): looking round would only find where it thought it
-    -- was again.
+    -- on its own first (scanning, with a Geo Scanner; looking round,
+    -- the tracker matching it to the map); then with you. Straight to
+    -- you if you said so (setpos).
+    local note = ""
     if fs.exists(ASK_FILE) then
-      web.setDoing("Waiting for you to tell me where I am (setpos)", "needs_you", "lost")
-      require("locate").run()
-    else
-      local found, why = require("locate").auto()
-      if not found then
-        web.setDoing("Lost, and couldn't work out where by looking round (" .. tostring(why) .. "): needs you", "needs_you", "lost")
-        require("locate").run()
+      local file = fs.open(ASK_FILE, "r")
+      note = file and file.readAll() or ""
+      if file then
+        file.close()
       end
+    end
+    local found, why = false, "you said to ask (setpos)"
+    if note ~= "ask" then
+      local locate = require("locate")
+      local x, y, z = position.get()
+      local sx, sy, sz, sFacing
+      found, sx, sy, sz, sFacing = locate.byScan(note ~= "moved" and { x, y, z } or nil)
+      if found then
+        position.moveTo(sx, sy, sz, sFacing)
+        position.noteSurroundings()
+      else
+        found, why = locate.auto(note == "moved")
+      end
+    end
+    if not found then
+      web.setDoing(note == "ask" and "Waiting for you to tell me where I am (setpos)"
+        or "Lost, and couldn't work out where on my own (" .. tostring(why) .. "): needs you", "needs_you", "lost")
+      require("locate").run()
     end
     fs.delete(ASK_FILE)
   end

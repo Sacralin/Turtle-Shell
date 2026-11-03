@@ -1,9 +1,15 @@
 -- ==================================================
 -- locate.lua : works out where the turtle is
 --
--- First on its own, with the tracker (locate.auto): it looks all
--- round and the tracker matches that against the shared map, near
--- where it thought it was. If that can't settle it, with your help:
+-- First on its own, with the tracker:
+--   - with a Geo Scanner (locate.byScan): it scans round it, and the
+--     tracker finds where on the whole map that fits (the blocks round
+--     a spot are like a fingerprint); then it works out which way it
+--     faces from the scan and what's next to it;
+--   - without one (locate.auto): it looks all round, stepping about,
+--     and the tracker matches that to the map near where it thought it
+--     was, its home, and the other turtles.
+-- If that can't settle it, with your help:
 --
 -- Like the in-game GPS, but with one turtle and you:
 --   1. you look at it with F3 and type its Targeted Block
@@ -189,11 +195,14 @@ local AHEAD = { [0] = { 1, 0 }, [1] = { 0, 1 }, [2] = { -1, 0 }, [3] = { 0, -1 }
 -- digging) and look again. It moves with the bare turtle moves, so
 -- nothing it sees goes on the map at the wrong place. Returns true
 -- (and the position's set, home kept), or false and why not.
-function locate.auto()
+-- moved: it's been told it was moved, so where it thought it was isn't
+-- taken just because it fits.
+function locate.auto(moved)
   if not web.isSetUp() or not position.home() then
     return false, "no tracker, or never been placed"
   end
   local nearX, nearY, nearZ, nearFacing = position.get()
+  local homeX, homeY, homeZ = position.home()
   local f, u, r, turns = 0, 0, 0, 0 -- where it is from where it started: its own front, up, right; turns right since
   local cells, been = {}, { ["0,0,0"] = true }
 
@@ -227,7 +236,8 @@ function locate.auto()
 
     web.setDoing(("Lost: working out where I am from what's round me (look %d)"):format(step + 1), "working")
     local reply = web.post("/locate", { world = require("world").get() or "",
-      near = { nearX, nearY, nearZ }, facing = nearFacing, radius = 32, cells = cells })
+      near = { nearX, nearY, nearZ }, facing = nearFacing, radius = 32, cells = cells,
+      home = { homeX, homeY, homeZ }, moved = moved == true })
     if type(reply) ~= "table" then
       return false, "the tracker isn't answering"
     end
@@ -268,6 +278,192 @@ function locate.auto()
     end
   end
   return false, "still more than one place fits"
+end
+
+
+-- ================= with a Geo Scanner: its fingerprint =================
+
+local SCAN_RADIUS = 8 -- (free: further costs fuel)
+local SCAN_TRIES = 3  -- a scanner that's cooling down says so: wait and try again
+
+-- Which way we face, from a scan (names by where they are from the
+-- scan, by the world's x y z) and what's next to us: look all round,
+-- and step (never digging, so nothing's changed) till only one way
+-- fits. Returns facing and where we are now from where we scanned
+-- (dx, dy, dz), or nil and why (back where it scanned).
+local function facingFromScan(names)
+  local function scanned(dx, dy, dz)
+    if dx * dx + dy * dy + dz * dz > SCAN_RADIUS * SCAN_RADIUS then
+      return nil -- (out of its reach: says nothing)
+    end
+    local name = names[dx .. "," .. dy .. "," .. dz] or "minecraft:air"
+    return not name:find("^computercraft:") and name or nil
+  end
+  local ways = { [0] = true, [1] = true, [2] = true, [3] = true } -- which way its front was, when it scanned
+  local f, u, r, turns = 0, 0, 0, 0 -- where it is from where it scanned: its own front, up, right; turns right since
+  local been = { ["0,0,0"] = true }
+  local path = {} -- the steps it's taken, to go back if it can't tell
+  -- back to where it scanned, facing the way it was
+  local function back()
+    for i = #path, 1, -1 do
+      local way = path[i]
+      if way.du > 0 then
+        turtle.down()
+      elseif way.du < 0 then
+        turtle.up()
+      else
+        while turns ~= (way.turns + 2) % 4 do
+          turtle.turnRight()
+          turns = (turns + 1) % 4
+        end
+        turtle.forward()
+      end
+    end
+    while turns ~= 0 do
+      turtle.turnRight()
+      turns = (turns + 1) % 4
+    end
+  end
+  local function world(k, df, du, dr)
+    local right = (k + 1) % 4
+    return df * STEP_X[k] + dr * STEP_X[right], du, df * STEP_Z[k] + dr * STEP_Z[right]
+  end
+  -- a block seen next to here: throw out the ways the scan says it isn't; true if open
+  local function seen(df, du, dr, found, block)
+    local name = found and block.name or "minecraft:air"
+    if name:find("^computercraft:") then
+      return false -- another turtle: it moves
+    end
+    local open = OPEN[name] == true
+    for k in pairs(ways) do
+      local want = scanned(world(k, f + df, u + du, r + dr))
+      if want and want ~= name and not (open and OPEN[want]) then
+        ways[k] = nil
+      end
+    end
+    return open
+  end
+  for _ = 0, MAX_LOOK_STEPS do
+    local open = {}
+    for _ = 1, 4 do
+      local d = AHEAD[turns]
+      if seen(d[1], 0, d[2], turtle.inspect()) then
+        table.insert(open, { df = d[1], du = 0, dr = d[2], turns = turns })
+      end
+      turtle.turnRight()
+      turns = (turns + 1) % 4
+    end
+    if seen(0, 1, 0, turtle.inspectUp()) then
+      table.insert(open, { df = 0, du = 1, dr = 0 })
+    end
+    if seen(0, -1, 0, turtle.inspectDown()) then
+      table.insert(open, { df = 0, du = -1, dr = 0 })
+    end
+    local left, k = 0, nil
+    for way in pairs(ways) do
+      left, k = left + 1, way
+    end
+    if left == 0 then
+      back()
+      return nil, "what's next to me isn't what the scan has"
+    end
+    if left == 1 then
+      local dx, dy, dz = world(k, f, u, r)
+      return (k + turns) % 4, dx, dy, dz
+    end
+    -- the same all round (flat ground, open air): a step somewhere new
+    local moved = false
+    for _, way in ipairs(open) do
+      local key = (f + way.df) .. "," .. (u + way.du) .. "," .. (r + way.dr)
+      if not been[key] then
+        local go = way.du > 0 and turtle.up or way.du < 0 and turtle.down or nil
+        if not go then
+          while turns ~= way.turns do
+            turtle.turnRight()
+            turns = (turns + 1) % 4
+          end
+          go = turtle.forward
+        end
+        if go() then
+          f, u, r = f + way.df, u + way.du, r + way.dr
+          been[key] = true
+          table.insert(path, way)
+          moved = true
+          break
+        end
+      end
+    end
+    if not moved then
+      back()
+      return nil, "everything round me looks the same, whichever way I face"
+    end
+  end
+  back()
+  return nil, "everything round me looks the same, whichever way I face"
+end
+
+-- Scan round here and have the tracker find where on the map that is.
+-- near: where we think we are (checked first), or nil. Returns true,
+-- x, y, z, facing (where we are now: it may have stepped to work out
+-- its facing), or false and why not. Nothing it sees goes on the map.
+function locate.byScan(near)
+  if not web.isSetUp() then
+    return false, "no tracker"
+  end
+  local ok, device = pcall(peripheral.find, "geoScanner")
+  if not ok or not device then
+    return false, "no Geo Scanner"
+  end
+  web.setDoing("Finding where I am: scanning round me", "working")
+  local found, why
+  for try = 1, SCAN_TRIES do
+    local scanned, result, err = pcall(device.scan, SCAN_RADIUS)
+    if scanned and type(result) == "table" then
+      found = result
+      break
+    end
+    why = tostring(err or result)
+    if try < SCAN_TRIES then
+      sleep(3) -- (cooling down after the last scan)
+    end
+  end
+  if not found then
+    return false, "the scan didn't work: " .. tostring(why)
+  end
+  local palette, index, blocks, names = {}, {}, {}, {}
+  for _, b in ipairs(found) do
+    if type(b) == "table" and type(b.name) == "string" and type(b.x) == "number" and type(b.y) == "number" and type(b.z) == "number" then
+      names[b.x .. "," .. b.y .. "," .. b.z] = b.name
+      local p = index[b.name]
+      if not p then
+        if #palette >= 512 then
+          return false, "too many kinds of block round me"
+        end
+        palette[#palette + 1] = b.name
+        p = #palette - 1
+        index[b.name] = p
+      end
+      blocks[#blocks + 1] = { b.x, b.y, b.z, p }
+    end
+  end
+  local none = textutils.empty_json_array
+  local reply = web.post("/locate/scan", { world = require("world").get() or "", radius = SCAN_RADIUS,
+    near = near, palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none })
+  if type(reply) ~= "table" then
+    return false, "the tracker isn't answering"
+  end
+  if reply.found ~= true then
+    return false, "the map: " .. tostring(reply.why or "not found")
+  end
+  local at = reply.at
+  if type(at) ~= "table" or type(at[1]) ~= "number" or type(at[2]) ~= "number" or type(at[3]) ~= "number" then
+    return false, "the tracker's answer made no sense"
+  end
+  local facing, dx, dy, dz = facingFromScan(names)
+  if not facing then
+    return false, dx -- (why)
+  end
+  return true, at[1] + dx, at[2] + dy, at[3] + dz, facing
 end
 
 
