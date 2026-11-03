@@ -11,7 +11,10 @@
 --   - with Avoid players on, where everyone else is, with no names, so
 --     the tracker can hold digging and building near them;
 --   - while the 3D view's open ("all"): where everyone is, by name,
---     reporting every LIVE_EVERY seconds so they move on the map.
+--     reporting every LIVE_EVERY seconds so they move on the map;
+--   - with "Log where players spend time" on in the tracker ("log":
+--     everyone on the server agreed), where everyone is, by name, with
+--     every report.
 -- Nothing else about anyone else is sent.
 -- ==================================================
 
@@ -20,6 +23,7 @@ local players = {}
 local owner = nil  -- your Minecraft name, from the tracker
 local avoid = false -- whether the tracker wants the others' positions
 local live = false -- whether the 3D view's open (everyone's positions wanted)
+local log = false  -- whether the tracker logs where everyone spends their time (everyone's positions wanted)
 
 local DETECTOR_EVERY = 10 -- seconds between reports, at most, with a detector (who's on)
 local LIVE_EVERY = 3      -- and while the 3D view's open
@@ -29,7 +33,7 @@ local function detector()
   return ok and device or nil -- (never stops a report)
 end
 
--- What the tracker said back: { owner = "Name", avoid = true }.
+-- What the tracker said back: { owner = "Name", avoid = true, all = true, log = true }.
 function players.told(said)
   if type(said) ~= "table" then
     return
@@ -37,6 +41,7 @@ function players.told(said)
   owner = type(said.owner) == "string" and said.owner ~= "" and said.owner or nil
   avoid = said.avoid == true
   live = said.all == true
+  log = said.log == true
 end
 
 -- Where a player is: { x, y, z, dimension }, or nil (offline, out of
@@ -81,7 +86,7 @@ function players.report()
   if avoid then
     out.others = others
   end
-  if live then
+  if live or log then
     local everyone = {}
     for _, name in ipairs(names) do
       if #everyone >= 50 then
