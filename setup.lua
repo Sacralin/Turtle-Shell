@@ -63,13 +63,63 @@ end
 
 -- ================= 4. where am I =================
 
+-- Ask the tracker whether what's all round us is what its map has
+-- where we think we are (and whether we went quiet while the other
+-- turtles carried on: picked up). Returns "here", "moved" or
+-- "unknown" and why; nil with no tracker. (Turning on the spot costs
+-- no fuel, and four turns right is facing the same way again.)
+local function askTheMap()
+  local web = require("web")
+  if not web.isSetUp() then
+    return nil
+  end
+  local OPEN = { ["minecraft:air"] = true, ["minecraft:cave_air"] = true, ["minecraft:water"] = true, ["minecraft:lava"] = true }
+  local cells = {}
+  local function note(f, u, r, found, block)
+    if found and block.name:find("^computercraft:") then
+      return -- another turtle: it moves
+    end
+    local open = not found or OPEN[block.name] == true
+    cells[#cells + 1] = { f, u, r, open and "o" or "s", (not open) and block.name or nil }
+  end
+  local AHEAD = { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } } -- (forward, right) after 0, 1, 2, 3 turns right
+  for i = 1, 4 do
+    note(AHEAD[i][1], 0, AHEAD[i][2], turtle.inspect())
+    turtle.turnRight()
+  end
+  note(0, 1, 0, turtle.inspectUp())
+  note(0, -1, 0, turtle.inspectDown())
+  local x, y, z, facing = position.get()
+  local got = web.post("/locate/check", { world = require("world").get() or "", id = os.getComputerID(),
+    at = { x, y, z }, facing = facing, cells = cells })
+  if type(got) ~= "table" or type(got.verdict) ~= "string" then
+    return nil
+  end
+  return got.verdict, tostring(got.why or "")
+end
+
 -- Picked up and put down somewhere else? Then we don't know
--- where we are any more.
+-- where we are any more. The tracker's map (and whether we went
+-- quiet) says best; what we noted round us before, otherwise.
 local function checkNotMoved()
   if not position.isSet() then
     return
   end
   local here, what = position.stillHere()
+  local ok, verdict, why = pcall(askTheMap) -- (never stops it starting: the old check, if it fails)
+  if not ok then
+    verdict, why = nil, nil
+  end
+  if verdict == "moved" then
+    here, what = false, why
+    -- straight to you: looking round near where it was would only
+    -- find where it thought it was again
+    local file = fs.open(ASK_FILE, "w")
+    file.write("moved")
+    file.close()
+  elseif verdict == "here" then
+    here = true -- (the map's sure: what we noted before may be out of date)
+  end
   if not here then
     screen.header(role.get())
     print("I think I've been moved:")
