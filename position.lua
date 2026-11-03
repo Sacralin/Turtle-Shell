@@ -175,6 +175,26 @@ function position.isSet()
   return data.set == true
 end
 
+-- Sure of where we are: set, and not doubted. At each start setup
+-- doubts it (it might have been picked up and moved while it was off)
+-- till it's checked, or told (Set position, the tracker matching it to
+-- the map). Till then nothing it sees goes on the tracker's map: it
+-- could be the wrong place. Not saved: each start checks again.
+local doubted = false
+function position.isSure()
+  return data.set == true and not doubted
+end
+
+-- Starting up: not sure till it's checked (setup.lua).
+function position.doubt()
+  doubted = true
+end
+
+-- Checked at start-up: still where it was (setup.lua).
+function position.confirm()
+  doubted = false
+end
+
 -- We're at these real coordinates, facing this way (0-3), and
 -- this is home. Used by setup (locate.lua), or by the
 -- turtle that made us. Use it again if you move the turtle by hand.
@@ -185,6 +205,7 @@ function position.set(x, y, z, facing)
     home = { x = x, y = y, z = z, facing = facing },
   }
   save()
+  doubted = false
 end
 
 -- Home is here now (where we are, facing the way we face): the
@@ -206,6 +227,7 @@ function position.moveTo(x, y, z, facing)
   data.pendingMove = nil
   data.around = nil
   save()
+  doubted = false
 end
 
 -- Forget where we are (keeping home), so setup works it out again.
@@ -213,6 +235,13 @@ function position.forget()
   data.set = false
   data.around = nil
   save()
+end
+
+-- Where it was before forget() after all (the tracker's map says so).
+function position.restore()
+  data.set = true
+  save()
+  doubted = false
 end
 
 

@@ -474,6 +474,9 @@ end
 -- radius of 8). What isn't listed is air. Turtles aren't listed:
 -- they move about. If it doesn't get there, it's not tried again.
 local function sendScan(found, x, y, z)
+  if not position.isSure() then
+    return -- (not sure where it is: nothing on the map)
+  end
   local palette, index, blocks = {}, {}, {}
   for _, block in ipairs(found) do
     if type(block) == "table" and type(block.name) == "string" and type(block.x) == "number"
@@ -611,7 +614,9 @@ local function survey()
           end
         end
       end
-      web.post("/survey", { world = world, site = site.name, scans = scans, blocks = blocks })
+      if position.isSure() then
+        web.post("/survey", { world = world, site = site.name, scans = scans, blocks = blocks })
+      end
       table.insert(said, ("the %s (%d of %d spots scanned)"):format(site.name, scans, #site.stands))
     end
   end

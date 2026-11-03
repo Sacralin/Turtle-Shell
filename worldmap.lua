@@ -103,6 +103,9 @@ local pending = {}          -- "x,y,z" -> { x, y, z, "o" / "w" / "u" }
 local order = {}            -- their keys, oldest first
 
 local function share(x, y, z, state)
+  if not require("position").isSure() then
+    return -- (not sure where it is: it could be the wrong place)
+  end
   local cellKey = x .. "," .. y .. "," .. z
   if not pending[cellKey] then
     table.insert(order, cellKey)
@@ -117,6 +120,9 @@ end
 -- max): a list of { x, y, z, "o" open / "w" wall / "u" unknown }.
 function worldmap.changes(max)
   local kept, list, listed = {}, {}, {}
+  if not require("position").isSure() then
+    return list -- (kept till it's sure again)
+  end
   for _, cellKey in ipairs(order) do
     -- each spot once (it can be in the order twice: changed, sent,
     -- and changed again before the order was tidied; twice in a

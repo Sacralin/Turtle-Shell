@@ -53,6 +53,9 @@ local function dropOldest(count)
 end
 
 local function add(x, y, z, name)
+  if not require("position").isSure() then
+    return -- (not sure where it is: it could be noting the wrong place)
+  end
   local key = x .. "," .. y .. "," .. z
   local was = seen[key] or older[key]
   remember(key, name)
@@ -94,6 +97,9 @@ end
 function sightings.batch()
   droppedAtBatch = dropped
   local batch = {}
+  if not require("position").isSure() then
+    return batch -- (kept till it's sure again)
+  end
   for i = 1, math.min(#waiting, PER_REPORT) do
     batch[i] = waiting[i]
   end

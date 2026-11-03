@@ -144,7 +144,9 @@ function area.checkFor(world, building, box, shouldStop)
   if not found then
     return nil, why
   end
-  web.post("/area", { world = world, building = building, blocked = found })
+  if position.isSure() then
+    web.post("/area", { world = world, building = building, blocked = found })
+  end
   return found
 end
 

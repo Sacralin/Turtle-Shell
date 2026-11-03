@@ -68,7 +68,7 @@ end
 -- turtles carried on: picked up). Returns "here", "moved" or
 -- "unknown" and why; nil with no tracker. (Turning on the spot costs
 -- no fuel, and four turns right is facing the same way again.)
-local function askTheMap()
+local function askTheMap(answer)
   local web = require("web")
   if not web.isSetUp() then
     return nil
@@ -94,6 +94,9 @@ local function askTheMap()
     at = { x, y, z }, facing = facing, cells = cells })
   if type(got) ~= "table" or type(got.verdict) ~= "string" then
     return nil
+  end
+  if answer then
+    answer.agree, answer.disagree = tonumber(got.agree) or 0, tonumber(got.disagree) or 0
   end
   return got.verdict, tostring(got.why or "")
 end
@@ -128,6 +131,34 @@ local function checkNotMoved()
     print("Working out where I am again...")
     position.forget()
   end
+end
+
+
+-- The start-up check said it had been moved, and it's been waiting for
+-- you since (setpos.txt says "moved"; "ask" is you, with setpos): ask
+-- the tracker's map again about where it was. Only a clear match puts
+-- it back (release 112's tracker took a server restart, with turtles
+-- coming back one by one, for being picked up).
+local function askAgain()
+  if not fs.exists(ASK_FILE) then
+    return false
+  end
+  local file = fs.open(ASK_FILE, "r")
+  local said = file and file.readAll() or ""
+  if file then
+    file.close()
+  end
+  if said ~= "moved" then
+    return false
+  end
+  local answer = {}
+  local ok, verdict = pcall(askTheMap, answer)
+  if ok and verdict == "here" and (answer.agree or 0) >= 3 and answer.disagree == 0 then
+    position.restore()
+    fs.delete(ASK_FILE)
+    return true
+  end
+  return false
 end
 
 
@@ -302,6 +333,7 @@ function setup.computer()
 end
 
 function setup.run()
+  position.doubt() -- (till it's checked below: nothing on the map before then)
   if not role.isSet() then
     askRole()
   end
@@ -322,6 +354,10 @@ function setup.run()
     os.reboot()
   end
   checkNotMoved()
+  position.confirm() -- (still set: checked, so sure)
+  if not position.isSet() and askAgain() then
+    print("I wasn't moved after all: carrying on.")
+  end
   if not position.isSet() then
     -- on its own first (looking round, the tracker matching it to
     -- the map); then with you. Straight to you if you said so
