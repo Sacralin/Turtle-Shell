@@ -165,10 +165,11 @@ end
 -- up coal itself (digging the well, a Miner): below the low point it
 -- still fetches what the warehouse has, but carries on working (its
 -- own check says if there's enough for the trip), since waiting on a
--- warehouse with no coal would never end. Returns true if it can
--- work, or false and why not.
-function equipment.topUp(house, findsFuel)
-  if not equipment.belowFill() then
+-- warehouse with no coal would never end. onlyWhenLow: it works far
+-- from home, so it goes for fuel only below the low point, not to top
+-- up. Returns true if it can work, or false and why not.
+function equipment.topUp(house, findsFuel, onlyWhenLow)
+  if not equipment.belowFill() or (onlyWhenLow and not equipment.lowOnFuel()) then
     wanted, wantedSince = nil, nil
     return true
   end

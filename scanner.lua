@@ -11,6 +11,13 @@
 -- round home, and heights, if they're set. Without an answer, RANGE
 -- round home, at any height.
 --
+-- It can be given an area of its own instead (in the tracker): a spot
+-- to explore round, not home. Then it flies there first and works
+-- outwards from it, so Explorers can each map a part of the world at
+-- once (one at 0 0, one at 1000 0...). Home's still home: it goes back
+-- for fuel, but only when it's low (not to top up: it's a long way),
+-- and it leaves looking over the colony (surveys) to the others.
+--
 -- With a Geo Scanner it explores: every scan (everything within
 -- RADIUS blocks) tells it which blocks round it are solid, so the
 -- rest is open. It keeps a map of the world in 15 block cubes
@@ -93,15 +100,18 @@ end
 local function fuelUp()
   local equipment = require("equipment")
   local house = web.get("/warehouse?world=" .. textutils.urlEncode(require("world").get() or ""))
-  local ok, why = equipment.topUp(house) -- (keeps the tank full: see equipment.lua)
+  -- (keeps the tank full: see equipment.lua; with an area of its own,
+  -- far from home, only when it's low)
+  local ok, why = equipment.topUp(house, false, scanner.limits().area ~= nil)
   wants = equipment.fuelWanted()
   return ok, why
 end
 
 
 -- ================= its limits =================
--- From the tracker (GET /explore, set there): { radius, minY, maxY },
--- the heights nil for none. Asked at most once a minute and kept;
+-- From the tracker (GET /explore, set there): { radius, minY, maxY,
+-- area = { x, y, z } }, the heights nil for none, the area nil for
+-- round home. Asked at most once a minute and kept;
 -- with no answer it keeps what it had, or RANGE round home at any
 -- height. An answer that makes no sense counts as none set.
 
@@ -120,13 +130,22 @@ local function sensible(got)
   if type(radius) ~= "number" or radius < 8 or radius > 10000 then
     return nil
   end
+  local area = nil
+  if got.area ~= nil then
+    local a = got.area
+    if type(a) ~= "table" or type(a[1]) ~= "number" or type(a[2]) ~= "number" or type(a[3]) ~= "number"
+        or math.abs(a[1]) > 30000000 or math.abs(a[3]) > 30000000 or a[2] < -64 or a[2] > 320 then
+      return nil
+    end
+    area = { x = math.floor(a[1]), y = math.floor(a[2]), z = math.floor(a[3]) }
+  end
   if minY == nil and maxY == nil then
-    return { radius = math.floor(radius) }
+    return { radius = math.floor(radius), area = area }
   end
   if type(minY) ~= "number" or type(maxY) ~= "number" or minY < -64 or maxY > 320 or minY > maxY then
     return nil
   end
-  return { radius = math.floor(radius), minY = math.floor(minY), maxY = math.floor(maxY) }
+  return { radius = math.floor(radius), minY = math.floor(minY), maxY = math.floor(maxY), area = area }
 end
 
 -- Its limits, asking the tracker if it's been a minute.
@@ -144,10 +163,20 @@ function scanner.limits()
   return limits
 end
 
+-- What it explores round: its area's middle, or home. x, z.
+local function centre()
+  local area = (limits or defaults()).area
+  if area then
+    return area.x, area.z
+  end
+  local hx, _, hz = position.home()
+  return hx, hz
+end
+
 -- Is x, y, z within its limits?
 local function inZone(x, y, z)
   local zone = limits or defaults()
-  local hx, _, hz = position.home()
+  local hx, hz = centre()
   return math.abs(x - hx) <= zone.radius and math.abs(z - hz) <= zone.radius
     and (not zone.minY or y >= zone.minY) and (not zone.maxY or y <= zone.maxY)
 end
@@ -411,14 +440,15 @@ end
 
 -- The next cube to scan: one it has seen into but not scanned, that
 -- it hasn't found unreachable, within its limits: { key, x, y, z }.
--- Nearest home first, ring by ring (a ring a cube wide, sideways, like
--- the sweep without a scanner), so it works outwards from home instead
+-- Nearest home (or its area's middle) first, ring by ring (a ring a
+-- cube wide, sideways, like the sweep without a scanner), so it works
+-- outwards from there instead
 -- of following one way out to the edge; in a ring, the one nearest it.
 -- A spot above DEEP_BELOW counts as SURFACE_RINGS rings further out
 -- (it would rather go deep).
 local function nextFrontier()
   local x, y, z = position.get()
-  local hx, _, hz = position.home()
+  local hx, hz = centre()
   local best, bestRing, bestDistance = nil, math.huge, math.huge
   for key, c in pairs(loadMap()) do
     if not c.t and not c.u and type(c.spot) == "string" and not shared.claimed[key] then
@@ -447,7 +477,7 @@ local function learnDeep()
     return
   end
   lastAskedDeep = os.clock()
-  local hx, _, hz = position.home()
+  local hx, hz = centre()
   local spots = web.get(("/open?world=%s&x=%d&z=%d&below=%d&range=%d&max=64"):format(
     textutils.urlEncode(require("world").get() or ""), hx, hz, DEEP_BELOW, (limits or defaults()).radius))
   if type(spots) ~= "table" then
@@ -652,9 +682,12 @@ local STEP_Z = { [0] = -1, [1] = 0, [2] = 1, [3] = 0 }
 -- done); done = when it finished.
 local function sweepState()
   local map = loadMap()
-  if type(map.sweep) ~= "table" then
-    map.sweep = { n = 0, x = 0, z = 0, dir = 1, leg = 1, inLeg = 0, legs = 0 }
+  local cx, cz = centre()
+  if type(map.sweep) ~= "table" or (map.sweep.cx and (map.sweep.cx ~= cx or map.sweep.cz ~= cz)) then
+    -- (from the start: none yet, or it's been given somewhere else)
+    map.sweep = { n = 0, x = 0, z = 0, dir = 1, leg = 1, inLeg = 0, legs = 0, cx = cx, cz = cz }
   end
+  map.sweep.cx, map.sweep.cz = cx, cz
   return map.sweep
 end
 
@@ -722,7 +755,8 @@ end
 local function zoneSentence()
   local zone = limits or defaults()
   local heights = zone.minY and (", heights %d to %d"):format(zone.minY, zone.maxY) or ""
-  return ("Its whole zone (%d blocks round home%s) is explored and up to date"):format(zone.radius, heights)
+  local round = zone.area and ("its area at %d %d"):format(zone.area.x, zone.area.z) or "home"
+  return ("Its whole zone (%d blocks round %s%s) is explored and up to date"):format(zone.radius, round, heights)
 end
 
 -- Sweep without a scanner: a sentence, and its state.
@@ -738,7 +772,7 @@ local function explore()
     loadMap().sweep = nil -- time to go over it again, from home
     state = sweepState()
   end
-  local hx, _, hz = position.home()
+  local hx, hz = centre()
   local orders = require("orders")
   for _ = 1, SWEEP_STEPS do
     if state.n >= total then
@@ -754,8 +788,8 @@ local function explore()
     nextColumn(state)
   end
   saveMap()
-  return ("Sweeping the ground (no Geo Scanner): %d of %d columns, %d blocks out from home"):format(
-    state.n, total, math.max(math.abs(state.x), math.abs(state.z))), "working"
+  return ("Sweeping the ground (no Geo Scanner): %d of %d columns, %d blocks out from %s"):format(
+    state.n, total, math.max(math.abs(state.x), math.abs(state.z)), zone.area and "its area's middle" or "home"), "working"
 end
 
 
@@ -774,8 +808,9 @@ function scanner.work()
     return explore()
   end
 
-  -- keeping an eye on the colony, every so often
-  if not lastSurvey or os.clock() - lastSurvey > SURVEY_EVERY then
+  -- keeping an eye on the colony, every so often (not with an area of
+  -- its own: it's away; the others do it)
+  if not (limits or defaults()).area and (not lastSurvey or os.clock() - lastSurvey > SURVEY_EVERY) then
     lastSurvey = os.clock()
     local done = survey()
     if done then
@@ -831,6 +866,18 @@ function scanner.work()
   if not target and taken > 0 then
     lastRound = os.clock() -- (a rest, then it looks again)
     return "Waiting: the other Explorers have the places near me", "waiting"
+  end
+  local area = (limits or defaults()).area
+  if not target and area and not inZone(x, y, z) then
+    -- given an area of its own, and not there yet: to its middle, and
+    -- a scan there starts it off
+    web.setDoing(("Off to its area: heading for %d %d %d"):format(area.x, area.y, area.z))
+    local ok, travelWhy = travel.to(area.x, area.y, area.z)
+    if not ok then
+      lastRound = os.clock() -- (a rest, then it tries again)
+      return ("Couldn't get to its area at %d %d %d (%s)"):format(area.x, area.y, area.z, tostring(travelWhy)), "blocked"
+    end
+    return "Reached its area at " .. area.x .. " " .. area.y .. " " .. area.z, "working"
   end
   if not target then
     lastRound = os.clock()
