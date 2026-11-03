@@ -87,11 +87,20 @@ function remote.run(command)
     if not n or n < 1 or n > MOST_STEPS then
       return "Remote: ignored (steps must be 1 to " .. MOST_STEPS .. ")"
     end
+    -- moved by hand: into a no-go zone too, if you say so (nogo.lua)
+    local was = _G.EMPIRE_BY_HAND
+    _G.EMPIRE_BY_HAND = true
     for i = 1, n do
-      if not STEPS[action]() then
+      local ok, moved = pcall(STEPS[action])
+      if not ok or not moved then
+        _G.EMPIRE_BY_HAND = was
+        if not ok then
+          error(moved, 0)
+        end
         return ("Remote: stopped after %d of %d %s: %s (%s)"):format(i - 1, n, action, inTheWay(action), where())
       end
     end
+    _G.EMPIRE_BY_HAND = was
     return ("Remote: moved %s %d (%s)"):format(action, n, where())
   elseif (action == "left" or action == "right") and rest == "" then
     turn[action]()

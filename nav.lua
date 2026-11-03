@@ -69,6 +69,12 @@ end
 -- otherwise give up. Returns true, or false and the reason.
 -- target() gives the spot we're moving into, for the reason.
 local function tryMove(moveFunction, dig, attack, inspect, target, side)
+  -- a no-go zone: never in (nogo.lua), and not worth trying again
+  local nogo = require("nogo")
+  local tx, ty, tz = target()
+  if not _G.EMPIRE_BY_HAND and nogo.refuses(tx, ty, tz) then
+    return false, nogo.why(tx, ty, tz)
+  end
   local reason
   for i = 1, TRIES do
     local moved

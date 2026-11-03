@@ -202,6 +202,11 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
       web.setDoing(("Going to %d %d %d"):format(goalX, goalY, goalZ))
     end
   end
+  -- a no-go zone (nogo.lua): never there
+  local nogo = require("nogo")
+  if nogo.refuses(goalX, goalY, goalZ) then
+    return false, ("%d %d %d is in a no-go zone"):format(goalX, goalY, goalZ)
+  end
   local why = "no way found"
   local avoid = {} -- spots other turtles were in the way, this trip
   local surprises = 0 -- steps in a row the tracker said were open, that weren't
@@ -248,10 +253,10 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
           return false, reason -- the goal itself is taken by something built: no way round that
         end
         why = reason -- something in the way: plan again from here
-        if reason == "Movement obstructed" or tostring(reason):find("^can't dig") then
-          -- a turtle (nav waited and it didn't move), or ground this
-          -- turtle has no tool for: keep out of it this trip (the
-          -- tracker doesn't know: to others it's no wall)
+        if reason == "Movement obstructed" or tostring(reason):find("^can't dig") or tostring(reason):find("^no%-go") then
+          -- a turtle (nav waited and it didn't move), ground this
+          -- turtle has no tool for, or a no-go zone: keep out of it
+          -- this trip (the tracker doesn't know: to others it's no wall)
           avoid[block.x .. "," .. block.y .. "," .. block.z] = true
         end
         break

@@ -22,6 +22,9 @@ local screen = require("screen")
 local role = require("role")
 local orders = require("orders")
 
+-- never into a no-go zone, whatever the job (nogo.lua)
+require("nogo").guard()
+
 local REPORT_EVERY = 10  -- seconds between reports
 local RETRY_EVERY = 60   -- seconds to wait when the tracker can't be reached
 local QUIET_AFTER = 300  -- seconds of nothing to do before it says it's ready again

@@ -328,6 +328,11 @@ function web.status()
   -- who's on the server, with a Player Detector (players.lua)
   report.players = require("players").report()
 
+  -- which no-go zones it has (nogo.lua): the reply has them if they've changed
+  if turtle then
+    report.nogoV = require("nogo").version()
+  end
+
   -- what's attached, by side: { left = "chunky", ... }
   -- (handy for working out why something isn't being found)
   report.peripherals = {}
@@ -355,12 +360,16 @@ function web.send(report)
 
   -- a reply like {"command":"home"}; anything else means no command.
   -- It can say too: "hold" (why to wait before moving on: a player's
-  -- near, with Avoid players on; see move.lua), and "players" (what a
-  -- turtle with a Player Detector should send: players.lua)
+  -- near, with Avoid players on; see move.lua), "players" (what a
+  -- turtle with a Player Detector should send: players.lua) and "nogo"
+  -- (the no-go zones, when they've changed: nogo.lua)
   local ok, parsed = pcall(textutils.unserializeJSON, reply or "")
   parsed = ok and type(parsed) == "table" and parsed or {}
   _G.EMPIRE_HOLD = type(parsed.hold) == "string" and parsed.hold ~= "" and parsed.hold:sub(1, 100) or nil
   require("players").told(parsed.players)
+  if turtle and parsed.nogo ~= nil then
+    require("nogo").take(parsed.nogo)
+  end
   if type(parsed.command) == "string" then
     return true, parsed.command
   end

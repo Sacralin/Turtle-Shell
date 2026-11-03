@@ -15,6 +15,7 @@
 -- ==================================================
 
 local worldmap = require("worldmap")
+local nogo = require("nogo")
 
 local pathfind = {}
 
@@ -147,12 +148,17 @@ end
 -- maxZ }) and never through walls. avoid is optional: extra
 -- blocks to keep out of, as { ["x,y,z"] = true }.
 function pathfind.blocks(x, y, z, isGoal, heuristic, bounds, maxNodes, avoid)
+  -- no-go zones: never into one (unless it's in one: getting out)
+  local keepOut = nogo.count() > 0 and not nogo.contains(x, y, z)
   local function stepCost(bx, by, bz)
     if bx < bounds.minX or bx > bounds.maxX or bz < bounds.minZ or bz > bounds.maxZ
         or by < math.max(bounds.minY, MIN_Y) or by > math.min(bounds.maxY, MAX_Y) then
       return nil
     end
     if avoid and avoid[bx .. "," .. by .. "," .. bz] then
+      return nil
+    end
+    if keepOut and nogo.contains(bx, by, bz) then
       return nil
     end
     local state = worldmap.get(bx, by, bz)
@@ -187,13 +193,20 @@ function pathfind.sections(fromX, fromY, fromZ, toX, toY, toZ, maxNodes)
     if sy < lowest or sy > highest then
       return nil
     end
+    -- no-go zones: a section all in one is out (unless it's the end of
+    -- the route); one partly in one is dearer (the way through is narrower)
+    local covered = nogo.covers(sx * size, sy * size, sz * size, sx * size + size - 1, sy * size + size - 1, sz * size + size - 1)
+    if covered == "all" and not (sx == toX and sy == toY and sz == toZ) and not (sx == fromX and sy == fromY and sz == fromZ) then
+      return nil
+    end
+    local extra = covered and pathfind.DIG_COST or 0
     local open, walls = worldmap.counts(sx, sy, sz)
     if walls >= WALLED then
-      return pathfind.DIG_COST * 4
+      return pathfind.DIG_COST * 4 + extra
     elseif open > 0 then
-      return pathfind.OPEN_COST
+      return pathfind.OPEN_COST + extra
     end
-    return pathfind.DIG_COST
+    return pathfind.DIG_COST + extra
   end
   local function isGoal(sx, sy, sz)
     return sx == toX and sy == toY and sz == toZ

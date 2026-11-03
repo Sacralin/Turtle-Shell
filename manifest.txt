@@ -13,6 +13,7 @@ turn.lua
 terrain.lua
 sightings.lua
 worldmap.lua
+nogo.lua
 pathfind.lua
 nav.lua
 travel.lua
