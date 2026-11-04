@@ -346,6 +346,26 @@ function setup.computer()
   end
 end
 
+-- A name that's still the one it was given at first (its job then and
+-- its id, like "Builder 4") follows the job: given another, it's
+-- "Explorer 4". A name you've given it is left as it is.
+local function renameForJob()
+  local id = os.getComputerID()
+  local label, now = os.getComputerLabel(), role.get()
+  if not label or label == now .. " " .. id then
+    return
+  end
+  for _, job in ipairs(role.JOBS) do
+    if label == job .. " " .. id then
+      os.setComputerLabel(now .. " " .. id)
+      return
+    end
+  end
+  if label == role.NONE .. " " .. id then
+    os.setComputerLabel(now .. " " .. id)
+  end
+end
+
 function setup.run()
   position.doubt() -- (till it's checked below: nothing on the map before then)
   if not role.isSet() then
@@ -356,6 +376,7 @@ function setup.run()
   if not os.getComputerLabel() then
     os.setComputerLabel(role.get() .. " " .. os.getComputerID())
   end
+  renameForJob()
   if not web.wasAsked() then
     askWeb()
   end
