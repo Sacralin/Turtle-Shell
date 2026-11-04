@@ -399,6 +399,16 @@ local function doJob()
       showStatus()
     end
 
+    -- the Refuel app asked: burn the fuel in its inventory, now it's
+    -- between one thing and the next (and say how much it took)
+    if turtle and _G.EMPIRE_REFUEL then
+      _G.EMPIRE_REFUEL = nil
+      local before = turtle.getFuelLevel()
+      require("equipment").refuelFromInventory()
+      _G.EMPIRE_REFUELLED = turtle.getFuelLevel() - before
+      seconds = 0 -- (show the new fuel straight away)
+    end
+
     -- carry out the next command, or wait a moment for one
     local command = orders.take()
     if command then

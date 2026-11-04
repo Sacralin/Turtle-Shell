@@ -75,6 +75,17 @@
       ]
     },
     {
+      "name": "Refuel",
+      "about": "Burn the charcoal, coal and coal blocks in its inventory, up to a full tank",
+      "run": "refuel.lua",
+      "on": [
+        "turtle"
+      ],
+      "files": [
+        "refuel.lua"
+      ]
+    },
+    {
       "name": "Set position",
       "about": "Forget where the turtle is and work it out again (asks you)",
       "run": "setpos.lua",

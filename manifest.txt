@@ -46,3 +46,4 @@ info.lua
 pause.lua
 options.lua
 findturtle.lua
+refuel.lua
