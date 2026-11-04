@@ -5,7 +5,9 @@
 --   - reporting to the web tracker every 10 seconds, in the
 --     background (if it's set up, see setweb.lua). The tracker's
 --     reply can carry a command, like "home", "mine" or
---     "markout", which waits in orders.lua.
+--     "markout", which waits in orders.lua. After "home" it stays
+--     home (through restarts and updates too) until "carryon", or
+--     until it's given something to do.
 --   - the job: on a turtle, first the setup (setup.lua), then
 --     a status screen, carrying out commands as they arrive.
 --     In between, a Crafter keeps its warehouse sorted and
@@ -24,6 +26,9 @@ local orders = require("orders")
 
 -- never into a no-go zone, whatever the job (nogo.lua)
 require("nogo").guard()
+
+local STAY_FILE = "stayhome.txt" -- there: told to go home, and staying until "carryon"
+local STAYING = "Home, nothing to do: staying here until told to carry on"
 
 local REPORT_EVERY = 10  -- seconds between reports
 local RETRY_EVERY = 60   -- seconds to wait when the tracker can't be reached
@@ -146,6 +151,10 @@ end
 local COMMANDS = {}
 
 function COMMANDS.home()
+  -- (first, so it stays put whatever happens on the way)
+  local file = fs.open(STAY_FILE, "w")
+  file.write("home")
+  file.close()
   web.setDoing("Going home")
   showStatus()
   -- through the mine if we're in it, so we don't dig a new way up
@@ -158,10 +167,18 @@ function COMMANDS.home()
     ok, reason = require("mining").returnHome()
   end
   if ok then
-    web.setDoing("Home, nothing to do yet", "idle")
+    web.setDoing(STAYING, "paused") -- (paused: Auto jobs leaves it be)
   else
     web.setDoing("Couldn't get home: " .. tostring(reason), "blocked", web.reasonOf(reason) or "no_route")
   end
+end
+
+-- Carry on: back to its job (the tracker's Carry on).
+function COMMANDS.carryon()
+  if role.get() == "Miner" then
+    require("quarry").setPaused(false)
+  end
+  web.setDoing("Carrying on", "working")
 end
 
 function COMMANDS.mine()
@@ -238,6 +255,15 @@ local lastWork = os.clock()
 local lastResume = os.clock() - RESUME_EVERY -- (the first look is straight away)
 
 local function idleWork()
+  -- told to go home: nothing started until it's told to carry on
+  -- (or given something to do)
+  if fs.exists(STAY_FILE) then
+    local doing = tostring(web.status().doing)
+    if doing ~= STAYING and not doing:find("^Couldn't get home") then
+      web.setDoing(STAYING, "paused")
+    end
+    return
+  end
   -- the job's sentence, and the state (and reason) it may give after
   -- it (web.lua: left out, they're worked out from the words)
   local result, state, reason = nil, nil, nil
@@ -338,7 +364,8 @@ local function doJob()
     require("setup").run()
     noteWhereWeAre()
     -- the Builder was building when she stopped (a restart, an update): carry on
-    if role.get() == "Builder" and require("build").isActive() then
+    -- (unless she was told to go home)
+    if role.get() == "Builder" and require("build").isActive() and not fs.exists(STAY_FILE) then
       busy = true
       COMMANDS.build()
       busy = false
@@ -349,7 +376,14 @@ local function doJob()
     require("setup").computer()
   end
   local status = web.status().doing
-  if not (status:find("^Stopped") or status:find("^Couldn't") or status:find("^Finished")) then
+  if turtle and fs.exists(STAY_FILE) then
+    -- told to go home before it stopped: still staying (and on its way, if it
+    -- wasn't there yet)
+    web.setDoing(STAYING, "paused")
+    if not require("position").atHome() then
+      orders.add("home")
+    end
+  elseif not (status:find("^Stopped") or status:find("^Couldn't") or status:find("^Finished")) then
     web.setDoing("Ready, nothing to do yet", "idle") -- (but not over why a build stopped)
   end
   local seconds = 0
@@ -370,6 +404,9 @@ local function doJob()
     if command then
       -- unknown commands are skipped: only names in COMMANDS do anything
       if turtle and COMMANDS[command] then
+        if command ~= "home" then
+          fs.delete(STAY_FILE) -- (given something to do, or told to carry on: no longer staying)
+        end
         busy = true
         COMMANDS[command]()
         busy = false

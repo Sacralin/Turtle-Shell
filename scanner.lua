@@ -602,6 +602,12 @@ local function surveyed(name)
     or name:find("_sapling$") or name:find("_propagule$")
 end
 
+-- Told to go home? Every trip stops for it part way (the main loop
+-- then takes it), not only once it's got there and scanned.
+local function homeWanted()
+  return require("orders").has("home")
+end
+
 -- Look over the places the tracker asks about: to each of a site's
 -- spots (never digging), scan, and send what's in its box. Returns
 -- a sentence, or nil if there's nowhere to look.
@@ -624,7 +630,10 @@ local function survey()
         local sx, sy, sz = stand[1], stand[2], stand[3]
         if type(sx) == "number" and type(sy) == "number" and type(sz) == "number" then
           web.setDoing(("Surveying the %s: going to %d %d %d"):format(site.name, sx, sy, sz))
-          if travel.to(sx, sy, sz) then
+          if homeWanted() then
+            break
+          end
+          if travel.to(sx, sy, sz, homeWanted) then
             local ok, found = pcall(device.scan, RADIUS)
             if ok and type(found) == "table" then
               scans = scans + 1
@@ -734,7 +743,7 @@ local function toColumn(tx, tz)
     return true
   end
   if math.abs(tx - x) + math.abs(tz - z) > 1 then
-    if not travel.to(tx, y, tz) then
+    if not travel.to(tx, y, tz, homeWanted) then
       return false
     end
     toTheGround()
@@ -872,7 +881,10 @@ function scanner.work()
     -- given an area of its own, and not there yet: to its middle, and
     -- a scan there starts it off
     web.setDoing(("Off to its area: heading for %d %d %d"):format(area.x, area.y, area.z))
-    local ok, travelWhy = travel.to(area.x, area.y, area.z)
+    local ok, travelWhy = travel.to(area.x, area.y, area.z, homeWanted)
+    if travelWhy == "stopped" then
+      return "Stopped on the way to its area: told to go home", "working"
+    end
     if not ok then
       lastRound = os.clock() -- (a rest, then it tries again)
       return ("Couldn't get to its area at %d %d %d (%s)"):format(area.x, area.y, area.z, tostring(travelWhy)), "blocked"
@@ -884,7 +896,11 @@ function scanner.work()
     return zoneSentence(), "idle"
   end
   web.setDoing(("%s: heading for %d %d %d"):format(doing, target.x, target.y, target.z))
-  local ok, travelWhy = travel.to(target.x, target.y, target.z)
+  local ok, travelWhy = travel.to(target.x, target.y, target.z, homeWanted)
+  if travelWhy == "stopped" then
+    -- (not a place it can't get to: it was told to go home)
+    return ("Stopped on the way to %d %d %d: told to go home"):format(target.x, target.y, target.z), "working"
+  end
   if not ok then
     cube(target.key).u = true -- no way there it could find (it never digs)
     saveMap()
