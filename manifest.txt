@@ -45,3 +45,4 @@ FindPlayer.lua
 info.lua
 pause.lua
 options.lua
+findturtle.lua

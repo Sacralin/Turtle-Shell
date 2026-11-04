@@ -2,7 +2,8 @@
 -- options.lua : the Settings app (BitDriven OS)
 --
 -- Change this device's settings from a menu: the tracker's address
--- and key, the world, its name, and (a turtle) its job. Each one
+-- and key, the world, its name, and (a turtle) its job. (On a pocket
+-- computer, the tracker and world are for the Find Turtle app.) Each one
 -- asks before it saves. The key is typed hidden and never shown.
 -- A new world or job restarts the device, once the work's finished
 -- the move it's making (the work keeps what it knew till then).
@@ -116,7 +117,13 @@ local function trackerSetting()
   end
   web.setUp(url, key)
   print("Saved. Testing...")
-  local tried, ok, reason = pcall(function() return web.send(web.status()) end)
+  local tried, ok, reason
+  if pocket then
+    -- (a pocket only reads from the tracker: it doesn't report)
+    tried, ok, reason = true, web.get("/worlds")
+  else
+    tried, ok, reason = pcall(function() return web.send(web.status()) end)
+  end
   if not tried then
     ok, reason = false, ok -- (an error making the report)
   end

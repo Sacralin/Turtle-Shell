@@ -91,10 +91,13 @@
       "run": "options.lua",
       "on": [
         "turtle",
-        "computer"
+        "computer",
+        "pocket"
       ],
       "files": [
-        "options.lua"
+        "options.lua",
+        "web.lua",
+        "world.lua"
       ]
     },
     {
@@ -111,6 +114,20 @@
       ],
       "files": [
         "FindPlayer.lua"
+      ]
+    },
+    {
+      "name": "Find Turtle",
+      "about": "Where the turtles are, nearest first, and an arrow to the one you pick (a Player Detector shows the way)",
+      "run": "findturtle.lua",
+      "on": [
+        "pocket",
+        "computer"
+      ],
+      "files": [
+        "findturtle.lua",
+        "web.lua",
+        "world.lua"
       ]
     }
   ]
