@@ -553,7 +553,17 @@ local function scanHere()
   if not device then
     return nil, "no Geo Scanner equipped"
   end
-  local ok, found, scanWhy = pcall(device.scan, RADIUS)
+  local ok, found, scanWhy
+  for _ = 1, 6 do
+    ok, found, scanWhy = pcall(device.scan, RADIUS)
+    if ok and type(found) == "table" then
+      break
+    end
+    if not tostring(ok and scanWhy or found):lower():find("cool") then
+      break -- (not just the scanner's cooldown, after a scan on the way: no use waiting)
+    end
+    sleep(1)
+  end
   if not ok or type(found) ~= "table" then
     return nil, "the scan didn't work: " .. tostring(ok and scanWhy or found)
   end
@@ -945,5 +955,27 @@ end
 
 -- (travel.lua scans round when it hits rock the map didn't know)
 scanner.scanHere = scanHere
+
+-- A scan on the way (travel.lua, after each step): whenever the
+-- scanner's ready again, never waiting for it. Every scan fills in the
+-- map where it's been, and lets the tracker check the turtles it sees
+-- against one another (PositionCheck.cs): the more, the sooner one
+-- that's wrong about where it is is put right.
+local ALONG_EVERY = 2000 -- milliseconds between scans on the way, at least (the scanner's cooldown)
+local alongAt = 0
+function scanner.scanAlong()
+  local now = os.epoch("utc")
+  if now - alongAt < ALONG_EVERY then
+    return
+  end
+  alongAt = now
+  local device = peripheral.find("geoScanner")
+  local ok, found = pcall(device and device.scan or error, RADIUS)
+  if ok and type(found) == "table" then
+    local x, y, z = position.get()
+    pcall(sendScan, found, x, y, z)
+    pcall(learn, found, x, y, z)
+  end
+end
 
 return scanner

@@ -235,6 +235,12 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
     looks, lookedAt = looks + 1, here
     return scanner.scanHere() ~= nil
   end
+  -- a scan on the way, whenever the scanner's ready (a turtle with a Geo Scanner)
+  local scanAlong
+  if peripheral and peripheral.find and peripheral.find("geoScanner") then
+    local loaded, scanner = pcall(require, "scanner")
+    scanAlong = loaded and type(scanner) == "table" and scanner.scanAlong or nil
+  end
   for attempt = 1, MAX_REPLANS do
     local x, y, z = position.get()
     if x == goalX and y == goalY and z == goalZ then
@@ -257,6 +263,9 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
         return false, "stopped"
       end
       local ok, reason, solid = stepTo(block.x, block.y, block.z, block.expect == "n")
+      if ok and scanAlong then
+        pcall(scanAlong)
+      end
       if block.expect == "o" then
         if solid then
           surprises = surprises + 1
