@@ -41,6 +41,7 @@ local BLOCK_NODES = 8000  -- most places one exact plan may consider
 local SECTION_NODES = 3000
 local MAX_REPLANS = 60    -- give up after this many surprises in one trip
 local LOST_AFTER = 3      -- steps in a row the tracker said were open but weren't: lost?
+local MAX_LOOKS = 10      -- scans round it in one trip, at most (a turtle with a Geo Scanner)
 
 
 -- Move one block to a neighbouring spot (keep: kept ground, not to
@@ -210,6 +211,24 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
   local why = "no way found"
   local avoid = {} -- spots other turtles were in the way, this trip
   local surprises = 0 -- steps in a row the tracker said were open, that weren't
+  -- In ground the map doesn't know, a turtle that can't dig gets stuck
+  -- on every bit of rock its route tries. One with a Geo Scanner looks
+  -- round instead (scanner.lua: the scan goes on the tracker's map),
+  -- once per spot, and plans again from what it saw.
+  local looks, lookedAt = 0, nil
+  local function lookRound()
+    local x, y, z = position.get()
+    local here = x .. "," .. y .. "," .. z
+    if looks >= MAX_LOOKS or lookedAt == here or not peripheral.find("geoScanner") then
+      return false
+    end
+    local loaded, scanner = pcall(require, "scanner")
+    if not loaded or type(scanner) ~= "table" or type(scanner.scanHere) ~= "function" then
+      return false
+    end
+    looks, lookedAt = looks + 1, here
+    return scanner.scanHere() ~= nil
+  end
   for attempt = 1, MAX_REPLANS do
     local x, y, z = position.get()
     if x == goalX and y == goalY and z == goalZ then
@@ -217,17 +236,17 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
     end
 
     local path, problem, answered = askTracker(goalX, goalY, goalZ, avoid)
-    if not path and answered then
+    if not path and answered and not lookRound() then
       return false, problem -- the tracker knows the most: if it found no way, there isn't one
     end
-    if not path then
+    if not path and not answered then
       path, problem = planNextStretch(goalX, goalY, goalZ, avoid)
-    end
-    if not path then
-      return false, problem
+      if not path then
+        return false, problem
+      end
     end
 
-    for _, block in ipairs(path) do
+    for _, block in ipairs(path or {}) do -- (none: it looked round, and asks again)
       if shouldStop and shouldStop() then
         return false, "stopped"
       end
@@ -258,6 +277,9 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
           -- turtle has no tool for, or a no-go zone: keep out of it
           -- this trip (the tracker doesn't know: to others it's no wall)
           avoid[block.x .. "," .. block.y .. "," .. block.z] = true
+          if tostring(reason):find("^can't dig") then
+            lookRound() -- (rock the map didn't know: what else is there?)
+          end
         end
         break
       end

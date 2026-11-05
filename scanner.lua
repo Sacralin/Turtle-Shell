@@ -929,4 +929,7 @@ function scanner.work()
 end
 
 
+-- (travel.lua scans round when it hits rock the map didn't know)
+scanner.scanHere = scanHere
+
 return scanner
