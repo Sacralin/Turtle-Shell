@@ -54,11 +54,11 @@ function move.waitWhilePaused()
       _G.EMPIRE_REMOTE = true
       local ok, said = pcall(remote.run, command)
       _G.EMPIRE_REMOTE = false
-      web.setDoing((_G.EMPIRE_PAUSED and "Paused" or "Waiting") .. ", moved by hand: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))),
+      web.setDoing((_G.EMPIRE_PAUSED and "Paused" or "Waiting") .. ", sent by remote: " .. (ok and said or ("Remote: went wrong: " .. tostring(said))),
         _G.EMPIRE_PAUSED and "paused" or "waiting", not _G.EMPIRE_PAUSED and "player_near" or nil)
     else
       local saying, state, why = waiting(was)
-      if saying ~= web.doing() and not (web.doing() or ""):find(", moved by hand: ") then
+      if saying ~= web.doing() and not (web.doing() or ""):find(", sent by remote: ") then
         web.setDoing(saying, state, why) -- (paused while held, or the other way round)
       end
       sleep(1)
@@ -99,7 +99,7 @@ end
 -- us now, so it can tell if we're picked up and moved). Both
 -- where we were and where we are now are open space, for the map.
 -- target() says where the move goes, from where it is: asked after
--- any pause, since it can be moved by hand while paused (Come to me,
+-- any pause, since it can be sent by remote while paused (Come to me,
 -- Remote control), and the spot worked out before would be wrong.
 local function doMove(moveFunction, target)
   move.waitWhilePaused()
