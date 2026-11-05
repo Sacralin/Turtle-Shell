@@ -98,9 +98,13 @@ end
 -- then tell position.lua whether it worked (and what's below
 -- us now, so it can tell if we're picked up and moved). Both
 -- where we were and where we are now are open space, for the map.
-local function doMove(moveFunction, x, y, z)
+-- target() says where the move goes, from where it is: asked after
+-- any pause, since it can be moved by hand while paused (Come to me,
+-- Remote control), and the spot worked out before would be wrong.
+local function doMove(moveFunction, target)
   move.waitWhilePaused()
   local fromX, fromY, fromZ = position.get()
+  local x, y, z = target()
   _G.EMPIRE_MOVING = true -- the updater won't restart us until it's recorded
   position.startMove(x, y, z)
   local moved, reason = moveFunction()
@@ -120,25 +124,31 @@ local function doMove(moveFunction, x, y, z)
   return moved, reason
 end
 
+local function above()
+  local x, y, z = position.get()
+  return x, y + 1, z
+end
+
+local function under()
+  local x, y, z = position.get()
+  return x, y - 1, z
+end
+
 
 function move.forward()
-  local x, y, z = position.inFront()
-  return doMove(turtle.forward, x, y, z)
+  return doMove(turtle.forward, position.inFront)
 end
 
 function move.back()
-  local x, y, z = position.behind()
-  return doMove(turtle.back, x, y, z)
+  return doMove(turtle.back, position.behind)
 end
 
 function move.up()
-  local x, y, z = position.get()
-  return doMove(turtle.up, x, y + 1, z)
+  return doMove(turtle.up, above)
 end
 
 function move.down()
-  local x, y, z = position.get()
-  return doMove(turtle.down, x, y - 1, z)
+  return doMove(turtle.down, under)
 end
 
 
