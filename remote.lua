@@ -106,6 +106,49 @@ local function inTheWay(direction)
   return "something in the way"
 end
 
+-- Found (remote:findme): which way it faces, from a step. It steps a
+-- block (turning right first if it must: never digging) and is scanned
+-- again; the way it went says the way it faced. Then it steps back and
+-- turns back. Returns the facing, where it is (x, y, z), and a note.
+-- (Moves straight with turtle.*: position.lua's set from the answer after.)
+local function facingFromStep(locate, facing, x, y, z)
+  local turns, stepped = 0, false
+  for _ = 1, 4 do
+    if turtle.forward() then
+      stepped = true
+      break
+    end
+    turtle.turnRight()
+    turns = turns + 1
+  end
+  local ok, x2, y2, z2
+  for _ = 1, 4 do
+    local retry
+    ok, x2, y2, z2 = locate.byHelper()
+    retry = not ok and y2 -- (not found: why, then whether to try again)
+    if ok or not retry then
+      break
+    end
+    sleep(3)
+  end
+  local back = stepped and turtle.back()
+  for _ = 1, turns % 4 do
+    turtle.turnLeft()
+  end
+  if not (stepped and ok) then
+    return facing, x, y, z, " (facing not checked: couldn't step)"
+  end
+  local WAY = { ["0,-1"] = 0, ["1,0"] = 1, ["0,1"] = 2, ["-1,0"] = 3 }
+  local went = WAY[(x2 - x) .. "," .. (z2 - z)]
+  if not went or y2 ~= y then
+    return facing, x, y, z, " (facing not checked: the step didn't add up)"
+  end
+  if not back then
+    x, y, z = x2, y2, z2 -- (couldn't step back: it's still a block on)
+  end
+  return (went - turns) % 4, x, y, z, ""
+end
+
 -- Do a remote command. Returns a sentence, for its status.
 function remote.run(command)
   local paused = remote.pauseOrResume(command)
@@ -144,12 +187,16 @@ function remote.run(command)
     local locate = require("locate")
     for try = 1, FIND_TRIES do
       require("web").setDoing("Remote: finding where I am, from a turtle sent to help (scanning)", "needs_you", "lost")
-      local ok, a, b, c = locate.byHelper()
+      local ok, a, b, c, again = locate.byHelper()
       if ok then
         local _, _, _, facing = position.get()
+        local checked = ""
+        if again then
+          facing, a, b, c, checked = facingFromStep(locate, facing, a, b, c)
+        end
         position.moveTo(a, b, c, facing)
         position.confirm()
-        return ("Remote: found where I am, from the turtle sent to help: %d %d %d"):format(a, b, c)
+        return ("Remote: found where I am, from the turtle sent to help: %d %d %d %s%s"):format(a, b, c, position.FACINGS[facing] or "?", checked)
       end
       if not b or try == FIND_TRIES then -- (b: try again, it's not in sight yet)
         return "Remote: couldn't find where I am: " .. tostring(a), "needs_you", "lost"

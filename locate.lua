@@ -484,9 +484,10 @@ end
 
 -- Found by another turtle (the tracker's Find it, FindHelp.cs): it's sent
 -- one whose position it trusts to near here, and that one's in the scan,
--- so the tracker knows exactly where this one is. Returns true, x, y, z;
--- or false, why, and whether to try again (it's not in sight yet).
--- Which way it faces isn't asked: a scan's in the world's directions.
+-- so the tracker knows exactly where this one is. Returns true, x, y, z,
+-- and whether the tracker wants a second scan from a block away (for
+-- which way it faces: a scan's in the world's directions, so it can't
+-- say that); or false, why, and whether to try again (not in sight yet).
 function locate.byHelper()
   if not web.isSetUp() then
     return false, "no tracker", false
@@ -508,7 +509,7 @@ function locate.byHelper()
       or at[1] ~= math.floor(at[1]) or at[2] ~= math.floor(at[2]) or at[3] ~= math.floor(at[3]) then
     return false, "the tracker's answer made no sense", false
   end
-  return true, at[1], at[2], at[3]
+  return true, at[1], at[2], at[3], reply.again == true
 end
 
 
