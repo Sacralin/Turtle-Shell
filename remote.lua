@@ -13,6 +13,9 @@
 --   remote:pause  remote:resume     the Pause work app, from afar
 --   remote:sethome                  home is here now, facing this way
 --   remote:sethome:<x>,<y>,<z>,<f>  home is there, facing f (0 north to 3 west)
+--   remote:findme                   lost: another turtle's been sent to near it
+--                                   (the tracker's Find it): scan till it's in
+--                                   sight, and take where the tracker says it is
 --
 -- Pause, resume and set home are done as soon as they arrive (main.lua's
 -- reporting), even while it's paused or busy: the rest wait their turn.
@@ -28,6 +31,8 @@ local position = require("position")
 local remote = {}
 
 local MOST_STEPS = 64
+local FIND_EVERY = 15  -- seconds between scans, waiting for the turtle sent to find it
+local FIND_TRIES = 80  -- (20 minutes)
 local FAR = 30000000 -- the world's edge, x and z
 local PAUSE_FILE = "paused.txt"
 
@@ -135,6 +140,22 @@ function remote.run(command)
   elseif (action == "left" or action == "right") and rest == "" then
     turn[action]()
     return ("Remote: turned %s (%s)"):format(action, where())
+  elseif action == "findme" and rest == "" then
+    local locate = require("locate")
+    for try = 1, FIND_TRIES do
+      require("web").setDoing("Remote: finding where I am, from a turtle sent to help (scanning)", "needs_you", "lost")
+      local ok, a, b, c = locate.byHelper()
+      if ok then
+        local _, _, _, facing = position.get()
+        position.moveTo(a, b, c, facing)
+        position.confirm()
+        return ("Remote: found where I am, from the turtle sent to help: %d %d %d"):format(a, b, c)
+      end
+      if not b or try == FIND_TRIES then -- (b: try again, it's not in sight yet)
+        return "Remote: couldn't find where I am: " .. tostring(a), "needs_you", "lost"
+      end
+      sleep(FIND_EVERY)
+    end
   elseif action == "goto" then
     local x, y, z = rest:match("^(%-?%d+),(%-?%d+),(%-?%d+)$")
     x, y, z = tonumber(x), tonumber(y), tonumber(z)

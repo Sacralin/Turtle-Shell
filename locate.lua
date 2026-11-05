@@ -402,19 +402,14 @@ local function facingFromScan(names)
   return nil, "everything round me looks the same, whichever way I face"
 end
 
--- Scan round here and have the tracker find where on the map that is.
--- near: where we think we are (checked first), or nil. Returns true,
--- x, y, z, facing (where we are now: it may have stepped to work out
--- its facing), or false and why not. Nothing it sees goes on the map.
-function locate.byScan(near)
-  if not web.isSetUp() then
-    return false, "no tracker"
-  end
+-- Scan round here: the scan as the tracker takes it (palette, blocks:
+-- { dx, dy, dz, p }) and each block's name by where it is ("dx,dy,dz"),
+-- or nil and why not.
+local function scanHere()
   local ok, device = pcall(peripheral.find, "geoScanner")
   if not ok or not device then
-    return false, "no Geo Scanner"
+    return nil, "no Geo Scanner"
   end
-  web.setDoing("Finding where I am: scanning round me", "working")
   local found, why
   for try = 1, SCAN_TRIES do
     local scanned, result, err = pcall(device.scan, SCAN_RADIUS)
@@ -428,7 +423,7 @@ function locate.byScan(near)
     end
   end
   if not found then
-    return false, "the scan didn't work: " .. tostring(why)
+    return nil, "the scan didn't work: " .. tostring(why)
   end
   local palette, index, blocks, names = {}, {}, {}, {}
   for _, b in ipairs(found) do
@@ -437,7 +432,7 @@ function locate.byScan(near)
       local p = index[b.name]
       if not p then
         if #palette >= 512 then
-          return false, "too many kinds of block round me"
+          return nil, "too many kinds of block round me"
         end
         palette[#palette + 1] = b.name
         p = #palette - 1
@@ -447,8 +442,28 @@ function locate.byScan(near)
     end
   end
   local none = textutils.empty_json_array
+  return { palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none }, names
+end
+
+-- Scan round here and have the tracker find where on the map that is.
+-- near: where we think we are (checked first), or nil. Returns true,
+-- x, y, z, facing (where we are now: it may have stepped to work out
+-- its facing), or false and why not. Nothing it sees goes on the map.
+function locate.byScan(near)
+  if not web.isSetUp() then
+    return false, "no tracker"
+  end
+  local ok, device = pcall(peripheral.find, "geoScanner")
+  if not ok or not device then
+    return false, "no Geo Scanner" -- (before saying it's scanning: it can't)
+  end
+  web.setDoing("Finding where I am: scanning round me", "working")
+  local scan, names = scanHere()
+  if not scan then
+    return false, names -- (why)
+  end
   local reply = web.post("/locate/scan", { world = require("world").get() or "", radius = SCAN_RADIUS,
-    near = near, palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none })
+    near = near, palette = scan.palette, blocks = scan.blocks })
   if type(reply) ~= "table" then
     return false, "the tracker isn't answering"
   end
@@ -464,6 +479,36 @@ function locate.byScan(near)
     return false, dx -- (why)
   end
   return true, at[1] + dx, at[2] + dy, at[3] + dz, facing
+end
+
+
+-- Found by another turtle (the tracker's Find it, FindHelp.cs): it's sent
+-- one whose position it trusts to near here, and that one's in the scan,
+-- so the tracker knows exactly where this one is. Returns true, x, y, z;
+-- or false, why, and whether to try again (it's not in sight yet).
+-- Which way it faces isn't asked: a scan's in the world's directions.
+function locate.byHelper()
+  if not web.isSetUp() then
+    return false, "no tracker", false
+  end
+  local scan, why = scanHere()
+  if not scan then
+    return false, why, false
+  end
+  local reply = web.post("/locate/scan", { world = require("world").get() or "", id = os.getComputerID(),
+    radius = SCAN_RADIUS, palette = scan.palette, blocks = scan.blocks })
+  if type(reply) ~= "table" then
+    return false, "the tracker isn't answering", true
+  end
+  if reply.found ~= true then
+    return false, tostring(reply.why or "not found"), reply.retry == true
+  end
+  local at = reply.at
+  if type(at) ~= "table" or type(at[1]) ~= "number" or type(at[2]) ~= "number" or type(at[3]) ~= "number"
+      or at[1] ~= math.floor(at[1]) or at[2] ~= math.floor(at[2]) or at[3] ~= math.floor(at[3]) then
+    return false, "the tracker's answer made no sense", false
+  end
+  return true, at[1], at[2], at[3]
 end
 
 
