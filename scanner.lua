@@ -154,7 +154,7 @@ function scanner.limits()
     limitsAt = os.clock()
     local got, _, answered = web.get(("/explore?world=%s&id=%d"):format(
       textutils.urlEncode(require("world").get() or ""), os.getComputerID()))
-    if type(got) == "table" or answered then
+    if type(got) == "table" then
       limits = sensible(got) or defaults() -- (it answered: no limits, or nonsense)
     else
       limits = limits or defaults() -- (no answer: what it had)
@@ -206,9 +206,17 @@ local function loadMap()
 end
 
 local function saveMap()
-  local file = fs.open(EXPLORE_FILE, "w")
+  local temp = EXPLORE_FILE .. ".tmp"
+  local file = fs.open(temp, "w")
+  if not file then
+    return -- (no room: the old one's kept)
+  end
   file.write(textutils.serializeJSON(loadMap()))
   file.close()
+  if fs.exists(EXPLORE_FILE) then
+    fs.delete(EXPLORE_FILE)
+  end
+  fs.move(temp, EXPLORE_FILE)
 end
 
 local function cubeOf(x, y, z)
@@ -229,7 +237,8 @@ end
 local function learn(found, x, y, z)
   local solid = {}
   for _, block in ipairs(found) do
-    if type(block) == "table" and type(block.x) == "number" then
+    if type(block) == "table" and type(block.x) == "number"
+        and not (type(block.name) == "string" and block.name:find("^computercraft:turtle")) then
       solid[block.x .. "," .. block.y .. "," .. block.z] = true
     end
   end
@@ -544,9 +553,9 @@ local function scanHere()
   if not device then
     return nil, "no Geo Scanner equipped"
   end
-  local ok, found = pcall(device.scan, RADIUS)
+  local ok, found, scanWhy = pcall(device.scan, RADIUS)
   if not ok or type(found) ~= "table" then
-    return nil, "the scan didn't work: " .. tostring(found)
+    return nil, "the scan didn't work: " .. tostring(ok and scanWhy or found)
   end
   local x, y, z = position.get()
   sendScan(found, x, y, z)
@@ -910,8 +919,13 @@ function scanner.work()
     return ("Stopped on the way to %d %d %d: told to go home"):format(target.x, target.y, target.z), "working"
   end
   if not ok then
-    cube(target.key).u = true -- no way there it could find (it never digs)
-    saveMap()
+    local why = tostring(travelWhy)
+    if not (why == "Out of fuel" or why:find("^lost%?")) then
+      -- no way there it could find (it never digs); not if it's only out
+      -- of fuel, or lost (wrong about where it is: the cube may be fine)
+      cube(target.key).u = true
+      saveMap()
+    end
     return ("Couldn't find a way to %d %d %d (%s): trying elsewhere"):format(target.x, target.y, target.z, tostring(travelWhy)), "working"
   end
   local before = cube(target.key).spot

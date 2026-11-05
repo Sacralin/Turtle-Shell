@@ -235,7 +235,9 @@ local function changeJob(job)
   end
   role.set(job)
   web.setDoing(("Changing job to %s: starting again"):format(job), "working")
-  web.send(web.status()) -- (the tracker hears it now, not after the restart)
+  local now = web.status()
+  now.noCommand = true -- (its reply isn't looked at: a command in it would be lost)
+  web.send(now) -- (the tracker hears it now, not after the restart)
   sleep(1)
   os.reboot()
 end
@@ -476,7 +478,9 @@ if not ok then
   end)
   pcall(function()
     web.setDoing("Crashed: " .. message:sub(1, 200), "blocked", "crashed")
-    web.send(web.status())
+    local now = web.status()
+    now.noCommand = true -- (nobody's reading the reply)
+    web.send(now)
   end)
   error(err, 0)
 end

@@ -120,14 +120,20 @@ end
 
 -- Back to where it was placed, facing the way it was placed.
 local function goBack()
+  local tries = 0
   while #steps > 0 do
     face(table.remove(steps) + 2)
     if not turtle.forward() then
+      tries = tries + 1
+      if tries > 60 then
+        return false -- (the way back's shut for good: stays where it is)
+      end
       sleep(1) -- something in the way: try again
       table.insert(steps, (turned + 2) % 4)
     end
   end
   face(0)
+  return true
 end
 
 -- Which way a one-block step went, or nil if it wasn't one.
@@ -496,8 +502,13 @@ function locate.byHelper()
   if not scan then
     return false, why, false
   end
+  local near
+  if position.isSet() then
+    local nx, ny, nz = position.get()
+    near = { nx, ny, nz }
+  end
   local reply = web.post("/locate/scan", { world = require("world").get() or "", id = os.getComputerID(),
-    radius = SCAN_RADIUS, palette = scan.palette, blocks = scan.blocks })
+    radius = SCAN_RADIUS, near = near, palette = scan.palette, blocks = scan.blocks })
   if type(reply) ~= "table" then
     return false, "the tracker isn't answering", true
   end

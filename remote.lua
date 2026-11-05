@@ -131,16 +131,38 @@ local function facingFromStep(locate, facing, x, y, z)
     end
     sleep(3)
   end
-  local back = stepped and turtle.back()
+  local back = false
+  if stepped then
+    for _ = 1, 5 do -- (gravel fallen in, a turtle passing: try a few times)
+      back = turtle.back()
+      if back then
+        break
+      end
+      sleep(1)
+    end
+  end
   for _ = 1, turns % 4 do
     turtle.turnLeft()
   end
+  local STEP = { [0] = { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
+  local function aheadBy(way) -- (stuck a block on, which way's only a guess: the way it thought it faced)
+    local d = STEP[way % 4]
+    return x + d[1], y, z + d[2]
+  end
   if not (stepped and ok) then
+    if stepped and not back then
+      local ax, ay, az = aheadBy(facing + turns)
+      return facing, ax, ay, az, " (facing not checked: couldn't step back)"
+    end
     return facing, x, y, z, " (facing not checked: couldn't step)"
   end
   local WAY = { ["0,-1"] = 0, ["1,0"] = 1, ["0,1"] = 2, ["-1,0"] = 3 }
   local went = WAY[(x2 - x) .. "," .. (z2 - z)]
   if not went or y2 ~= y then
+    if not back then
+      local ax, ay, az = aheadBy(facing + turns)
+      return facing, ax, ay, az, " (facing not checked: the step didn't add up, and couldn't step back)"
+    end
     return facing, x, y, z, " (facing not checked: the step didn't add up)"
   end
   if not back then

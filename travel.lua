@@ -49,6 +49,11 @@ local MAX_LOOKS = 10      -- scans round it in one trip, at most (a turtle with 
 -- solid was there (not a turtle).
 local function stepTo(x, y, z, keep)
   local myX, myY, myZ = position.get()
+  if math.abs(x - myX) + math.abs(y - myY) + math.abs(z - myZ) ~= 1 then
+    -- not next to it (moved meanwhile: by a remote command while it
+    -- waited, say): no step at all; the way's planned again from here
+    return false, "moved off the route"
+  end
   local inspect, go
   if y > myY then
     inspect, go = turtle.inspectUp, nav.up
@@ -69,9 +74,10 @@ local function stepTo(x, y, z, keep)
   local found, block = inspect()
   local solid = found and not block.name:find("^computercraft:")
     and block.name ~= "minecraft:water" and block.name ~= "minecraft:lava"
+  local kept = nav.keepGround
   nav.keepGround = keep == true
   local ok, why = go()
-  nav.keepGround = false
+  nav.keepGround = kept -- (as it was: a trip inside a wait in go() mustn't clear an outer one's)
   return ok, why, solid
 end
 
@@ -219,7 +225,7 @@ function travel.to(goalX, goalY, goalZ, shouldStop)
   local function lookRound()
     local x, y, z = position.get()
     local here = x .. "," .. y .. "," .. z
-    if looks >= MAX_LOOKS or lookedAt == here or not peripheral.find("geoScanner") then
+    if looks >= MAX_LOOKS or lookedAt == here or not (peripheral and peripheral.find and peripheral.find("geoScanner")) then
       return false
     end
     local loaded, scanner = pcall(require, "scanner")
@@ -458,7 +464,9 @@ function travel.home(shouldStop)
     homeBlockedBy = nil
   else
     -- blocked by something right on the home spot (not a turtle: it'll move)?
-    local name = tostring(why):match("blocked by ([%w_:%-%.]+) at " .. x .. " " .. y .. " " .. z .. "$")
+    local tail = (" at %d %d %d"):format(x, y, z)
+    local said = tostring(why)
+    local name = said:sub(-#tail) == tail and said:match("^.-blocked by ([%w_:%-%.]+) at ") or nil
     homeBlockedBy = (name and not name:find("^computercraft:")) and name or nil
   end
   return ok, why

@@ -299,7 +299,7 @@ function web.status()
     report.homeBlocked = require("travel").homeBlocked()
 
     -- what it's learnt about the way round (worldmap.lua)
-    local changes = require("worldmap").changes(1000) -- (an Explorer in a cave learns a lot at once)
+    local changes = require("worldmap").changes(500) -- (an Explorer in a cave learns a lot at once: the rest next time)
     if #changes > 0 then
       report.map = changes
     end

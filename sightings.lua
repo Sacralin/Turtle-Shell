@@ -18,7 +18,7 @@
 local sightings = {}
 
 local MAX_WAITING = 5000 -- if the tracker's away for ages, keep the newest
-local PER_REPORT = 1000  -- sent at most this many per report (about 70 KB)
+local PER_REPORT = 300   -- sent at most this many per report (about 20 KB: a report must stay well under the tracker's limit)
 local SEEN_MAX = 3000    -- spots remembered before starting afresh (the last lot's kept too)
 
 local AIR = "minecraft:air"
