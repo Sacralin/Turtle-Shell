@@ -219,6 +219,13 @@ function position.setHome()
   return true
 end
 
+-- Home is there now, facing that way (0 north to 3 west): the
+-- tracker's Homes here. (Where it is now doesn't change.)
+function position.setHomeAt(x, y, z, facing)
+  data.home = { x = x, y = y, z = z, facing = facing }
+  save()
+end
+
 -- We're at these real coordinates, but home stays where it was
 -- (put back somewhere else by hand).
 function position.moveTo(x, y, z, facing)

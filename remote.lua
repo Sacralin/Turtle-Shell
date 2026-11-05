@@ -12,6 +12,10 @@
 --                                   know where it is: Set position)
 --   remote:pause  remote:resume     the Pause work app, from afar
 --   remote:sethome                  home is here now, facing this way
+--   remote:sethome:<x>,<y>,<z>,<f>  home is there, facing f (0 north to 3 west)
+--
+-- Pause, resume and set home are done as soon as they arrive (main.lua's
+-- reporting), even while it's paused or busy: the rest wait their turn.
 --
 -- Only these, and only whole numbers in range: anything else is
 -- ignored. Nothing in a command is ever run as code.
@@ -52,6 +56,28 @@ function remote.pauseOrResume(command)
   return nil
 end
 
+-- Set home, from afar: here, or at a spot. Returns a sentence (and a
+-- state and reason when it can't), or nil if it isn't one.
+function remote.setHome(command)
+  if command == "remote:sethome" then
+    if not position.setHome() then
+      return "Remote: can't set home: I don't know where I am (Set position)", "needs_you", "lost"
+    end
+    local x, y, z, facing = position.home()
+    return ("Remote: home is here now (at %d %d %d %s)"):format(x, y, z, position.FACINGS[facing] or "?")
+  end
+  local x, y, z, f = tostring(command):match("^remote:sethome:(%-?%d+),(%-?%d+),(%-?%d+),(%d)$")
+  x, y, z, f = tonumber(x), tonumber(y), tonumber(z), tonumber(f)
+  if not x then
+    return nil
+  end
+  if math.abs(x) > FAR or math.abs(z) > FAR or y < -64 or y > 320 or f > 3 then
+    return "Remote: ignored (not a spot in the world)"
+  end
+  position.setHomeAt(x, y, z, f)
+  return ("Remote: home is %d %d %d now, facing %s"):format(x, y, z, position.FACINGS[f] or "?")
+end
+
 local function where()
   if not position.isSet() then
     return "position not set"
@@ -80,6 +106,10 @@ function remote.run(command)
   local paused = remote.pauseOrResume(command)
   if paused then
     return paused
+  end
+  local homeSaid, homeState, homeReason = remote.setHome(command)
+  if homeSaid then
+    return homeSaid, homeState, homeReason
   end
   local action, rest = tostring(command):match("^remote:(%a+):?(.*)$")
   if STEPS[action] then
@@ -120,11 +150,6 @@ function remote.run(command)
       return ("Remote: couldn't get to %d %d %d: %s (%s)"):format(x, y, z, tostring(why), where())
     end
     return ("Remote: got to %d %d %d"):format(x, y, z)
-  elseif action == "sethome" and rest == "" then
-    if not position.setHome() then
-      return "Remote: can't set home: I don't know where I am (Set position)", "needs_you", "lost"
-    end
-    return ("Remote: home is here now (%s)"):format(where())
   end
   return "Remote: ignored (not a command I know)"
 end

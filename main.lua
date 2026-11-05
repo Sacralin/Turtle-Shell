@@ -74,8 +74,18 @@ local function keepReporting()
           fastUntil = os.clock() + FAST_FOR -- someone's at the controls: answer quickly
         end
         local paused = remote.pauseOrResume(result)
+        local homeSaid, homeState, homeReason
+        if turtle then
+          homeSaid, homeState, homeReason = remote.setHome(result)
+        end
         if paused then
           web.setDoing(paused, paused:find("^Paused") and "paused" or "working") -- (straight away: a paused turtle takes no commands)
+        elseif homeSaid then
+          -- (straight away too, paused or busy: one on its way home heads for the new one, travel.lua)
+          web.setDoing(homeSaid, homeState or web.state(), homeReason)
+          if not homeState and fs.exists(STAY_FILE) and not orders.has("home") then
+            orders.add("home") -- (staying home: to the new one, and stays there)
+          end
         elseif result then
           -- result is a command name; the job decides what to do
           orders.add(result)
@@ -427,6 +437,9 @@ local function doJob()
         busy = true
         web.setDoing(require("remote").run(command))
         busy = false
+        if command:find("^remote:sethome") and fs.exists(STAY_FILE) and not orders.has("home") then
+          orders.add("home") -- (staying home: to the new one, and stays there)
+        end
         noteWhereWeAre()
         seconds = 0
         lastWork = os.clock() -- (its result stays shown a while)

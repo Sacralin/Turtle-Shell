@@ -411,13 +411,26 @@ function travel.homeBlocked()
   return homeBlockedBy
 end
 
--- Go home and face the way it was set up.
+-- Go home and face the way it was set up. If home's moved on the way
+-- (the tracker's Homes here), it heads for the new one.
 function travel.home(shouldStop)
   local x, y, z, facing = position.home()
   if not x then
     return false, "no home set (run setpos)"
   end
-  local ok, why = travel.to(x, y, z, shouldStop)
+  local moved = false
+  local function stop()
+    local hx, hy, hz = position.home()
+    if hx ~= x or hy ~= y or hz ~= z then
+      moved = true
+      return true
+    end
+    return shouldStop ~= nil and shouldStop() or false
+  end
+  local ok, why = travel.to(x, y, z, stop)
+  if moved and not ok then
+    return travel.home(shouldStop)
+  end
   if ok then
     turn.toFace(facing)
     homeBlockedBy = nil
