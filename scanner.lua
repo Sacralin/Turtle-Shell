@@ -502,14 +502,21 @@ end
 -- (POST /map/scan): each block as where it is from here and its
 -- place in a list of names, which keeps it small (about 60 KB for a
 -- radius of 8). What isn't listed is air. Turtles aren't listed:
--- they move about. If it doesn't get there, it's not tried again.
+-- they move about. They go separately (turtles: where each is from
+-- here), with this one's id: the tracker checks the turtles against
+-- each other with them, and puts right one that's wrong about where
+-- it is (PositionCheck.cs). If it doesn't get there, it's not tried again.
 local function sendScan(found, x, y, z)
   if not position.isSure() then
     return -- (not sure where it is: nothing on the map)
   end
-  local palette, index, blocks = {}, {}, {}
+  local palette, index, blocks, turtles = {}, {}, {}, {}
   for _, block in ipairs(found) do
     if type(block) == "table" and type(block.name) == "string" and type(block.x) == "number"
+        and type(block.y) == "number" and type(block.z) == "number"
+        and block.name:find("^computercraft:turtle") and #turtles < 50 then
+      turtles[#turtles + 1] = { block.x, block.y, block.z }
+    elseif type(block) == "table" and type(block.name) == "string" and type(block.x) == "number"
         and type(block.y) == "number" and type(block.z) == "number"
         and not block.name:find("^computercraft:turtle") then
       local p = index[block.name]
@@ -526,7 +533,8 @@ local function sendScan(found, x, y, z)
   end
   local none = textutils.empty_json_array -- (so nothing's [] in the JSON, not {})
   pcall(web.post, "/map/scan", { world = require("world").get() or "", x = x, y = y, z = z, radius = RADIUS,
-    palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none })
+    palette = #palette > 0 and palette or none, blocks = #blocks > 0 and blocks or none,
+    id = os.getComputerID(), turtles = #turtles > 0 and turtles or none })
 end
 
 -- Scan round here and put every ore on the map. Returns how many
