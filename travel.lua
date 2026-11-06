@@ -324,7 +324,7 @@ function travel.checkAbove(isWanted, x, y, z)
       local there, what = turtle.inspectDown()
       if there and isWanted(what.name) then
         local _, _, _, nowFacing = position.get()
-        position.moveTo(x, y + 1, z, nowFacing) -- this is really where we meant to be
+        position.moveTo(x, y + 1, z, nowFacing, "put right by what's under it (" .. tostring(what.name) .. ")") -- this is really where we meant to be
         return true, true
       end
       move.back()

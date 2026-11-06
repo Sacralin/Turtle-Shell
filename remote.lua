@@ -216,7 +216,7 @@ function remote.run(command)
         if again then
           facing, a, b, c, checked = facingFromStep(locate, facing, a, b, c)
         end
-        position.moveTo(a, b, c, facing)
+        position.moveTo(a, b, c, facing, "found by the tracker's answer (remote:findme)" .. tostring(checked or ""))
         position.confirm()
         return ("Remote: found where I am, from the turtle sent to help: %d %d %d %s%s"):format(a, b, c, position.FACINGS[facing] or "?", checked)
       end

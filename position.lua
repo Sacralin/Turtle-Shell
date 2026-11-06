@@ -89,6 +89,67 @@ local function load()
 end
 
 
+-- ================= what changed it =================
+-- Every change to where it thinks it is that isn't a step or a turn
+-- (set, found, forgotten, put back, changed by another app): from
+-- where, to where, why, and which line of which file did it. The last
+-- CHANGES_KEPT are kept (position-changes.json) and go with each
+-- report, so the tracker has every one, each once (by its number).
+local CHANGES_FILE = "position-changes.json"
+local CHANGES_KEPT = 20
+local changes
+
+local function loadChanges()
+  if changes then
+    return
+  end
+  changes = { n = 0, list = {} }
+  if fs.exists(CHANGES_FILE) then
+    local file = fs.open(CHANGES_FILE, "r")
+    local ok, saved = pcall(textutils.unserializeJSON, file.readAll())
+    file.close()
+    if ok and type(saved) == "table" and type(saved.n) == "number" and type(saved.list) == "table" then
+      changes = saved
+    end
+  end
+end
+
+local function where()
+  return { data.x, data.y, data.z, data.facing, data.set == true }
+end
+
+local function noteChange(why, before)
+  loadChanges()
+  local by = "?"
+  if debug and debug.getinfo then
+    local info = debug.getinfo(3, "Sl") -- (who called set, moveTo...: 1 is here, 2 that)
+    if type(info) == "table" then
+      by = tostring(info.short_src or "?"):match("([^/\\]*)$") .. ":" .. tostring(info.currentline)
+    end
+  end
+  changes.n = changes.n + 1
+  table.insert(changes.list, { n = changes.n, at = os.epoch("utc"), from = before, to = where(), why = tostring(why or "?"), by = by })
+  while #changes.list > CHANGES_KEPT do
+    table.remove(changes.list, 1)
+  end
+  local file = fs.open(CHANGES_FILE .. ".tmp", "w")
+  if file then
+    file.write(textutils.serializeJSON(changes))
+    file.close()
+    if fs.exists(CHANGES_FILE) then
+      fs.delete(CHANGES_FILE)
+    end
+    fs.move(CHANGES_FILE .. ".tmp", CHANGES_FILE)
+  end
+end
+
+-- The last few changes (for the reports).
+function position.changes()
+  loadChanges()
+  return changes.list
+end
+
+
 -- ================= recording moves =================
 -- move.lua calls startMove() just before moving and
 -- finishMove() just after.
@@ -141,7 +202,11 @@ local function finishInterruptedMove()
     print("if it happened. Assuming it didn't.")
     position.finishMove(false)
   else
+    local before = where()
     position.finishMove(fuelNow == move.fuelBefore - 1)
+    if before[1] ~= data.x or before[2] ~= data.y or before[3] ~= data.z then
+      noteChange("start-up: a move cut off by a restart had happened (its fuel was used)", before)
+    end
   end
   -- (if it did move, we don't know what's around the new spot)
 end
@@ -150,7 +215,15 @@ end
 -- Read the saved position again: another app (Set position) may have
 -- changed it since this one started.
 function position.reload()
+  local before = where()
   load()
+  local now = where()
+  for i = 1, 5 do
+    if before[i] ~= now[i] then
+      noteChange("changed on disk by another app (Set position?)", before)
+      break
+    end
+  end
 end
 
 -- ================= info =================
@@ -198,7 +271,8 @@ end
 -- We're at these real coordinates, facing this way (0-3), and
 -- this is home. Used by setup (locate.lua), or by the
 -- turtle that made us. Use it again if you move the turtle by hand.
-function position.set(x, y, z, facing)
+function position.set(x, y, z, facing, why)
+  local before = where()
   data = {
     x = x, y = y, z = z, facing = facing,
     set = true,
@@ -206,6 +280,7 @@ function position.set(x, y, z, facing)
   }
   save()
   doubted = false
+  noteChange(why or "set (and home here)", before)
 end
 
 -- Home is here now (where we are, facing the way we face): the
@@ -228,27 +303,33 @@ end
 
 -- We're at these real coordinates, but home stays where it was
 -- (put back somewhere else by hand).
-function position.moveTo(x, y, z, facing)
+function position.moveTo(x, y, z, facing, why)
+  local before = where()
   data.x, data.y, data.z, data.facing = x, y, z, facing
   data.set = true
   data.pendingMove = nil
   data.around = nil
   save()
   doubted = false
+  noteChange(why or "put somewhere", before)
 end
 
 -- Forget where we are (keeping home), so setup works it out again.
-function position.forget()
+function position.forget(why)
+  local before = where()
   data.set = false
   data.around = nil
   save()
+  noteChange(why or "forgotten", before)
 end
 
 -- Where it was before forget() after all (the tracker's map says so).
-function position.restore()
+function position.restore(why)
+  local before = where()
   data.set = true
   save()
   doubted = false
+  noteChange(why or "put back where it was", before)
 end
 
 

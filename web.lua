@@ -295,6 +295,12 @@ function web.status()
       report.sightings = seen
     end
 
+    -- the last changes to where it thinks it is, and why (position.lua): the tracker logs each once
+    local changes = require("position").changes()
+    if #changes > 0 then
+      report.positionChanges = changes
+    end
+
     -- something sitting on its home spot, so it can't get home
     report.homeBlocked = require("travel").homeBlocked()
 

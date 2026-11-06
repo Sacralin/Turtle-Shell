@@ -108,43 +108,22 @@ local function checkNotMoved()
   if not position.isSet() then
     return
   end
-  -- with a Geo Scanner: its fingerprint says where it is, here or not
-  local x, y, z, facing = position.get()
-  local scanned, sx, sy, sz, sFacing = require("locate").byScan({ x, y, z })
-  if scanned then
-    if sx ~= x or sy ~= y or sz ~= z or sFacing ~= facing then
-      screen.header(role.get())
-      print("I've been moved: I found where I am by scanning.")
-      print(("Now at %d %d %d."):format(sx, sy, sz))
-      sleep(2)
-    end
-    position.moveTo(sx, sy, sz, sFacing)
-    position.noteSurroundings()
+  -- Only what it noted round itself when it stopped says. Same blocks
+  -- round it: it's where it saved it was, and that's kept, exactly.
+  -- (It used to scan at every start and take wherever the scan best
+  -- fitted the tracker's map, or the map's word that it had moved. On a
+  -- map that's wrong anywhere, that moved turtles that hadn't moved at
+  -- all, a few blocks and a turn at a time, at every restart.)
+  local here, what = position.stillHere()
+  if here then
     return
   end
-  local here, what = position.stillHere()
-  local ok, verdict, why = pcall(askTheMap) -- (never stops it starting: the old check, if it fails)
-  if not ok then
-    verdict, why = nil, nil
-  end
-  if verdict == "moved" then
-    here, what = false, why
-    -- straight to you: looking round near where it was would only
-    -- find where it thought it was again
-    local file = fs.open(ASK_FILE, "w")
-    file.write("moved")
-    file.close()
-  elseif verdict == "here" then
-    here = true -- (the map's sure: what we noted before may be out of date)
-  end
-  if not here then
-    screen.header(role.get())
-    print("I think I've been moved:")
-    screen.printInColour(what, colours.yellow)
-    print("")
-    print("Working out where I am again...")
-    position.forget()
-  end
+  screen.header(role.get())
+  print("I think I've been moved:")
+  screen.printInColour(what, colours.yellow)
+  print("")
+  print("Working out where I am again...")
+  position.forget("start-up: what was round it isn't now (" .. tostring(what) .. ")")
 end
 
 
@@ -168,7 +147,7 @@ local function askAgain()
   local answer = {}
   local ok, verdict = pcall(askTheMap, answer)
   if ok and verdict == "here" and (answer.agree or 0) >= 3 and answer.disagree == 0 then
-    position.restore()
+    position.restore("start-up: the tracker's map says it's where it was after all")
     fs.delete(ASK_FILE)
     return true
   end
@@ -412,7 +391,7 @@ function setup.run()
       local sx, sy, sz, sFacing
       found, sx, sy, sz, sFacing = locate.byScan(note ~= "moved" and { x, y, z } or nil)
       if found then
-        position.moveTo(sx, sy, sz, sFacing)
+        position.moveTo(sx, sy, sz, sFacing, "start-up, not knowing where it was: its scan matched to the tracker's map")
         position.noteSurroundings()
       else
         found, why = locate.auto(note == "moved")

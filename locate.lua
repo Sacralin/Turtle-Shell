@@ -253,7 +253,8 @@ function locate.auto(moved)
         return false, "the tracker's answer made no sense"
       end
       local right = (k + 1) % 4
-      position.moveTo(sx + f * STEP_X[k] + r * STEP_X[right], sy + u, sz + f * STEP_Z[k] + r * STEP_Z[right], (k + turns) % 4)
+      position.moveTo(sx + f * STEP_X[k] + r * STEP_X[right], sy + u, sz + f * STEP_Z[k] + r * STEP_Z[right], (k + turns) % 4,
+        "worked out from what's round it, by the tracker's map")
       position.noteSurroundings()
       return true
     end
@@ -554,9 +555,9 @@ function locate.run()
         world.setDimension(world.DIMENSIONS[pick])
       end
       if newHome then
-        position.set(x, y, z, facing)
+        position.set(x, y, z, facing, "typed in by you (and home here)")
       else
-        position.moveTo(x, y, z, facing)
+        position.moveTo(x, y, z, facing, "typed in by you")
       end
       return
     end
